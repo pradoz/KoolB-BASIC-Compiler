@@ -1,0 +1,911 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="Generator" content="Author's own Paws - see www.GoDevTool.com">
+   <meta name="keywords" content="Linker, Assembler, linking, Win32, GoLink, GoAsm, asm, Windows, programming, tools">
+   <title>GoLink Linker Manual</title>
+   <!-- Copyright Jeremy Gordon 2002-2018 -->
+   <style>
+   <!--
+   h1 {font-size:300%}
+   body {margin:32px 16px 32px 16px; padding-top:0; min-width:672px}
+   td {vertical-align:top}
+   A {color: #0000FF; font: bold 10pt times}
+   A:Visited {color: #333399}
+   A:Hover {color: #009900}
+   -->
+   </style>
+</head>
+<body>
+<a NAME="top"></a>
+<div style="color:#000099; text-align:center; width:672px" >
+<h1 style="margin-bottom:0px">GoLink<br>Linker Manual</h1>
+<p><img src="GoLogo50.gif" height=22 width=50 alt="GoLogo">
+<b>A "Go" development tool:</b>
+<a href="http://www.GoDevTool.com">http://www.GoDevTool.com</a></p>
+<h2 style="float:left">Version 1.0</h2>
+<p style="float:right; text-align:right; color:#000000">by Jeremy Gordon - 
+<img src="mail6sblue.gif" height=13 width=93 alt="email" align="middle">
+<br>with assistance from <i>Wayne Radburn</i></p>
+</div>
+<br style="clear:both">
+<p>
+<a href="#why">Why a new linker?</a>
+<br><a href="#nut">GoLink's features in a nutshell</a>
+<br><a href="#using">Using GoLink</a>
+<br><a href="#impexp">Importing and Exporting functions and data</a>
+<br><a href="#loadconfig">Exception Handling, SafeSEH, and IMAGE_LOAD_CONFIG_DIRECTORY</a>
+<br><a href="#spec">Specification for /unused switch</a>
+<br><a href="#legal">Legal stuff</a>
+<br><a href="#ack">Acknowledgements</a>
+</p>
+<a NAME="why"></a><h2>Why a new linker?<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<ul>
+<li>Simplicity. I've kept files to a minimum and abolished LIB files. The linker
+is now free without fuss to do what it is supposed to do - link one or more
+object files and create the final executable.
+</li>
+<li>Speed. GoLink is, of course, written in assembler. For that reason, and
+also because it can ascertain details about imports from DLLs which are mostly
+already in memory, it is very quick.
+</li>
+<li>Independence. Win32 programmers who use assembler have been forced to do
+odd things to make their files compatible with Microsoft tools. No longer.
+GoLink is part of a suite of tools, GoAsm, GoRC and GoBug which are finely
+tuned to each other. Together they make creating Win32 programs using assembler
+very simple.
+</li>
+</ul>
+
+<a NAME="nut"></a><h2>GoLink's features in a nutshell<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<ul>
+<li>Clean precise output. Those who enjoy analysing the internals of
+executables may like GoLink's output which keeps "baggage" to a minimum.
+To view the output you can do no better than Wayne Radburn's PEview PE/COFF file
+viewer, available free from <a href="http://wjradburn.com/software/">here</a>.
+</li>
+<li>GoLink combines PE (Portable Executable) COFF (Common Object File Format)
+object files and creates PE executables suitable for running on the Windows
+operating system. It can make EXE, DLL or SYS files.
+</li>
+<li>GoLink can also link a file containing resources in RES or OBJ file
+format.
+</li>
+<li>GoLink can produce either 32-bit executables for 386 processors and above
+(x86) or 64-bit executables for the AMD64 or Intel EM64T family of processors (x86-64).
+Switching between the two is automatic - no special command line commands are
+required.
+</li>
+<li>GoLink will provide debug output as embedded COFF or COFF symbols in a 
+separate file. This will enable you to use a symbolic debugger (such as
+GoBug) on your executable.
+</li>
+<li>In a major step forward, GoLink does not need LIB (library) files. Instead
+GoLink looks inside the exporting executables themselves to find the imported
+functions and data. This makes GoLink much easier to use than other linkers
+and also speeds up the linking process.
+</li>
+<li>GoLink is finely tuned to GoAsm and together these programs sweep away
+cumbersome arrangements previously required for <a href="#impexp">importing and 
+exporting of functions and data</a> between the main executable and its DLLs.
+</li>
+<li>Also using GoAsm object files (or "Go" compatible files) GoLink is able to
+report on unused and unreferenced data and code symbols. So now you can
+easily weed out redundant data declarations and code in your programs.
+See the <a href="#unused">/unused switch</a>.
+</li>
+<li>Using the /mix switch, GoLink will ignore any symbol decoration which may be
+inserted by other compilers and assemblers. This means that you can link object
+files from such other tools. See the <a href="#mix">/mix switch</a>.
+</li>
+<li>GoLink can read a Unicode command line and Unicode command files, so you
+can use Unicode filenames in your projects. It also deals properly with
+Unicode code and data labels which it might find in object files.
+</li>
+</ul>
+
+<a NAME="using"></a><h2>Using GoLink<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<p>You can link a file very simply from an MS-DOS (command prompt) window for example:-</p>
+<pre>
+GoLink MyFile.obj
+</pre>
+<p>will create MyFile.exe.</p>
+
+<h3>Command files</h3>
+<p>In practice you will need to give GoLink a lot more information
+about input files and also using the command line switches. For convenience 
+these can be in one or more <i>command files</i> named in the command line for example:-</p>
+<pre>
+GoLink @command.fil             ;example with one command file
+GoLink @hello @goodbye.def      ;example with two command files
+</pre>
+<p>A command file must be a text only file containing one or more lines of 
+instruction. It may be in ANSI, Unicode UTF-8BOM (Windows UTF-8) or Unicode
+UTF-16LE format. You can include comments in a command file because
+anything after a semi-colon on a line is ignored. You can therefore comment-out
+lines which temporarily you don't need. For example:-</p>
+<pre>
+MyProg.obj            ;link this file to make MyProg.exe
+;/debug coff           ;use this line to add embedded debug information
+MyProg.res            ;use this file for resource input
+</pre>
+
+<h3>Input files - object and res files</h3>
+<p>Since the main task of the linker is to link together object files, the main
+input files are files with the extension obj. Just list these in any order.
+A res file (containing resources) can also be specified as an input file.
+<br>Note that unless the /fo switch is used, the executable will take the name
+of the first named object or res file.
+<br>If the file is not in the current directory you must include its path.</p>
+
+<a NAME="search"></a><h3>Input files - dll/ocx/exe/drv files</h3>
+<p>Another type of input file is one containing <i>exports</i>, such as a DLL.
+Exports may be in DLL, OCX, DRV or other EXE files and
+you can provide the names of these in the command line or in a command file,
+or in your source code by using the directive #dynamiclinkfile if you are using
+GoAsm (see the GoAsm help file how to do this).
+Unlike other linkers there is no need to use LIB files.
+During the linking process GoLink looks at the list of files one by one for
+the required imports. When it has found all the required imports it will
+stop looking at the listed files. Because of this, GoLink will run more
+quickly if you list these files in order of popularity, by putting at the
+top of the list those which contains most of the required imports.
+Usually this order for the system DLLs is a good one:-</p>
+<p>these contain most of the APIs you will be using:-</p>
+<pre>
+Kernel32.dll
+User32.dll
+Gdi32.dll
+</pre>
+<p>these are for the common controls and common dialog APIs:-</p>
+<pre>
+COMCTL32.dll
+comdlg32.dll
+</pre>
+<p>you may also need to use these:-</p>
+<pre>
+OLEAUT32.dll
+Hhctrl.ocx
+winspool.drv
+shell32.dll
+</pre>
+<p>There are of course several other system DLLs. You can find out which
+DLL holds the API you want to use by looking in the documentation for the
+API in the Windows Software Development Kit (SDK), available free from
+Microsoft see <a href="http://www.GoDevTool.com">my web site</a> for a
+link.</p>
+<p>You can see how many imports from your program are coming from each
+DLL by using the /files switch in the command line or a command file.</p>
+
+<h3>32-bit and 64-bit input files</h3>
+<p>GoLink automatically senses whether it is being given 32-bit or 64-bit input
+files and produces a 32-bit or 64-bit executable accordingly. No command line
+switching is needed. Because you cannot mix 32-bit and 64-bit code, GoLink
+will show an error if you try to mix these input files.
+<br>Unless you have switched off command line reports using the
+<a href="#nswitches">/ni or /no switch</a> GoLink will tell you in which format it
+has produced the executable.</p>
+
+<a NAME="searcho"></a><h4>Search order</h4>
+<p>You don't need to give a path for the dll/ocx/exe/drv file, because GoLink
+searches for the file using this search order:-</p>
+<ol>
+<li>the directory from which GoLink was started</li>
+<li>if different, the current directory</li>
+<li>the windows system directory</li>
+<li>the windows directory</li>
+<li>directories listed in the PATH environment variable</li>
+</ol>
+<p>You will normally not need to use specific versions of these files, but if you do want
+to do this make sure you give the path to the specific file, or place the file
+in the directory from which GoLink was started.</p>
+<p>You can see the path of the file used and also its creation date and time
+and its size by using the /files switch in the command line or a command file.
+Note that dates and times are adjusted to allow for the current daylight
+saving time setting on the computer running GoLink.</p>
+
+<a NAME="output"></a><h4>Screen output - controlling, limiting and redirecting</h4>
+<p>GoLink's default message output to the console is to give a copyright
+notice and report the output files. This is just a few lines, but if there
+are errors or if you use the <a href="#files">/files switch</a> 
+or the <a href="#unused">/unused switch</a> the output can be much larger.
+You can control the message output by using various switches, eg.
+whether there is any output at all and what sort of output 
+messages are given. You may need to do this if you use make files.
+See <a href="#nswitches">n switches</a> for details.</p>
+<p>If you run GoLink from an MS-DOS (command prompt) window, then you can use the
+<a href="#more">/more switch</a>. This will cause a screenful of messages
+to be shown at a time, and you will be prompted to press a key after
+each screenful. If you don't press a key (or give mouse input) there is
+a time-out of 60 seconds. You can redirect the message output using the DOS redirection indicator:-</p>
+<pre>
+GoLink @command.fil > filename
+</pre>
+<p>The format of the file created by GoLink may differ. The rules are:-</p>
+<ul>
+<li>If there is a command file in a Unicode format, the file has the same
+format as the first such command file.
+<li>If there is no command file in a Unicode format, then the format of the file
+will be ANSI if you are working with W9x or ME. If you are working with NT/2000 
+or XP however, the file will be in Unicode UTF-8 format with BOM (byte order mark).
+This is to allow for Unicode filenames which may be in the command <i>line</i>
+(not in a command file), and also code and data labels in the object file which
+may be in Unicode. Let me know if this causes any problems.
+</li>
+</ul>
+<p>You should use the <a href="#more">/more switch</a> rather than using the DOS
+"more" filter.</p>
+
+<p>The command line switches you can use are as follows:-</p>
+
+<table width=94% BORDER=1 CELLPADDING=8>
+
+<tr><td td WIDTH=18%> 
+<b>/b</b>
+</td><td>
+<b>= beep on error.</b>
+</td></tr>
+<tr><td>
+
+<b>/base xxxx</b>
+</td><td>
+<b>= set image base</b> (use hex) eg. /base 50000 sets the expected image base to 50000h.
+<br><font size="-1">This sets where, in virtual memory, you would like the executable to be loaded
+(the <i>image base</i>). If you do not set this value GoLink uses a default of
+400000h for EXEs, 10000000h for DLLs and 10000h for drivers.
+<br>
+<br>You will not normally need
+to set this value when making an EXE because each loaded EXE has its own virtual memory.
+This means that at any one time a number of programs can be running, all with the same
+image base, and there will be no conflict between them. But if the EXE relies on DLLs
+the Windows loader will also load these DLLs into the virtual memory of the EXE. Inside
+the DLL, GoLink will have written certain addresses on the assumption that the DLL would
+be loaded at the expected base address. If the DLL cannot be loaded at that expected base
+address (because it is occupied by another DLL) the loader will have to load it at another
+address. If that happens, the loader will need to write over the addresses inserted by
+GoLink. These addresses which require changing are called <i>base relocations</i>.
+Clearly this process takes time during loading and you can help to speed up the loading
+process by specifying your own base address for your DLLs. This will ensure that the DLL will
+actually be loaded at the expected base address. I would suggest using the area 10000000h to
+60000000h (the system itself tends to use the area outside these values). Ensure your
+value is rounded up to a 64K boundary. You can use GoBug (inspect/search promenade
+memory/promenade) to check where the operating system is loading your DLLs. It is
+interesting to note that the System DLLs themselves use this staggered base address
+system. Usually this is in the memory area of 80000000h and above.
+<br><br>GoLink inserts base relocation information in the executable only if you use
+the /base xxxx switch, the /dynamicbase switch, or if you are making a DLL or a driver.
+</td></tr>
+
+<tr><td>
+<b>/console</b>
+</td><td>
+<b>= make a console executable.</b>
+<br><font size="-1">This sets a flag in the executable telling the Windows
+loader that the executable will not rely on the Windows GUI (Graphic User
+Interface). In practice this means that the executable will not be given
+a message queue and that it will not require memory to be set aside for
+creating windows and the resulting device contexts. On the other hand the
+executable will be automatically provided with a "console" by the loader,
+allowing input from and output to the various devices connected to the
+computer. Because of the lower overhead, console applications tend to load
+and exit more quickly than graphics applications.
+</td></tr>
+<tr><td>
+<b>/debug coff</b>
+</td><td>
+<b>= add embedded coff debug information to the final executable.</b>
+<br><font size="-1">GoLink's debug output is tailored to what is required by
+assembler programmers. Basically every symbol known to the linker is put
+in the debug information together with its value. This can then be used to
+bring the program to life under debug control, using GoBug or other debuggers
+which accept coff debug information.
+</td></tr>
+
+<tr><td>
+<b>/debug dbg</b>
+</td><td>
+<b>= place coff debug information in a dbg file.</b>
+<br><font size="-1">If this switch is used, GoLink places the coff debug information
+in a file in .dbg format in an "exe" or "dll" sub-folder depending on what type
+of executable is being made. The sub-folder is used to ensure that there is
+no mix-up between the main EXE and its DLLs. So for example MyProg.exe will
+have its debug information placed in exe\MyProg.dbg and MyProg.dll will have its
+debug information placed in dll\MyProg.dbg.
+</td></tr>
+
+<tr><td>
+<b>/dll</b>
+</td><td>
+<b>= make a DLL.</b>
+<br><font size="-1">GoLink makes a DLL if either this switch is used or if
+using the /fo switch you specify an output file with the extension DLL or CPL. If
+neither of these apply and you are not making a driver, GoLink makes an EXE.
+<br>GoLink inserts base relocation information in the executable only if you use 
+the /base xxxx switch, the /dynamicbase switch, or if you are making a DLL or a driver.
+</td></tr>
+
+<tr><td><a NAME="driver"></a>
+<b>/driver</b>
+</td><td>
+<b>= make a driver.</b>
+<br><font size="-1">GoLink makes a driver if either this switch is used or if
+using the /fo switch you specify an output file with the extension SYS. GoLink does not
+set the WDM flag, unless /wdm is specified. See also 
+<a href="#wdm">making a Windows Driver Model driver</a> 
+and <a href="#uponly">specifying the uponly flag</a>.
+<br>GoLink inserts base relocation information in drivers.
+</td></tr>
+
+<tr><td>
+<b>/dynamicbase</b>
+</td><td>
+<b>= specify that the executable can be rebased at load time using Address Space Layout Randomization (ASLR).</b>
+<br><font size="-1">This sets the IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE flag. The operating system and subsystem versions are set to 5.1. GoLink also inserts base relocation information in the executable.
+</td></tr>
+
+<tr><td>
+<b>/e</b>
+</td><td>
+<b>= empty output file allowed.</b>
+<br><font size="-1">Using this switch you can make a "shell" PE file which will
+have all the necessary formal parts but no sections.
+</td></tr>
+
+<tr><td>
+<b>/entry xxxx</b>
+</td><td>
+<b>= set program entry point to xxxx.</b>
+<br><font size="-1">For example, /entry main will start the program at
+the code label "main:". If you do not specify the entry point with this
+switch GoLink assumes START will be used (in upper or lower case or a mixture).
+So if you want to use this default you should ensure that your code has the
+label "START:" at the correct place to start execution. Every
+EXE file needs an entry point, but in DLLs it is optional. GoLink warns 
+you if it cannot find the entry point in your executable. For compatibility
+with Microsoft tools, GoLink also recognises the entry point specified at
+assemble time using END. This information is passed to the linker using
+the .drectve section.
+</td></tr>
+
+<tr><td>
+<b>/export xxxx</b>
+</td><td>
+<b>= specify exported functions, data and ordinals.</b>
+<br><font size="-1">See <a href="#export">exporting procedures and data</a>
+</td></tr>
+
+<tr><td><a NAME="files"></a>
+<b>/files</b>
+</td><td>
+<b>= report in detail on files used and created.</b>
+<br><font size="-1">This option reports the full paths, file dates and times
+and sizes of the files used during the linker process and of the output
+files. There is other useful information such as the number of imports,
+exports and debug symbols. Note that all file times are adjusted to allow for the
+current daylight setting time of the computer running GoLink.
+</td></tr>
+
+<tr><td>
+<b>/fo</b>
+</td><td>
+<b>= specify output path/file.</b>
+<br><font size="-1">If the output file and path is not specified, GoLink
+assumes that the output file should be an EXE, and should have the same name
+and path as the first object or res file. You can use the /fo switch to change
+these defaults, for example /fo MyProg.exe or /fo MyProg.dll or /fo c:\exe\MyProg.exe.
+</td></tr>
+
+<tr><td>
+<b>/h or /?</b>
+</td><td>
+<b>= show a screen displaying these various options only.</b>
+</td></tr>
+
+<tr><td>
+<b>/heapinit xxxx</b>
+</td><td>
+<b>= specifies the heap commitment size.</b>
+<br><font size="-1">If you do not use this switch a value of 10000h (64KB) is used by default.
+</td></tr>
+
+<tr><td>
+<b>/heapsize xxxx</b>
+</td><td>
+<b>= specifies the heap reserve size.</b>
+<br><font size="-1">If you do not use this switch a value of 100000h (1MB) is used by default.
+</td></tr>
+
+<tr><td>
+<b>/largeaddressaware</b>
+</td><td>
+<b>= specify that the executable can handle addresses larger than 2GB.</b>
+<br><font size="-1">This sets the IMAGE_FILE_LARGE_ADDRESS_AWARE flag.
+If the /base switch is not specified, then GoLink uses a default
+Image Base of 14000000h for EXEs, and 180000000h for DLLs.
+For a 64-bit executable, if this switch is used with /dynamicbase,
+then another flag is also set for HIGHENTROPYVA 64-bit ASLR.
+</td></tr>
+
+<tr><td><a NAME="mix"></a>
+<b>/mix</b>
+</td><td>
+<b>= link input files and lib code made with a compiler which decorates symbols.</b>
+<br><font size="-1">Part of the baggage of a "C" compiler, and of the MASM assembler, is the decoration
+of symbols in the object files which they produce. Examples are:-
+<br>_MessageBoxW@16 <i>(indirect call to an API where there are four parameters)</i>
+<br>__imp__GetKeyState@4 <i>(direct call to an API where there is one parameter)</i>
+<br>_MyDataLabel <i>(simple decoration applied to a data label)</i>
+<br>_MyCodeLabel <i>(simple decoration applied to a code label)</i>
+<br>_MyCodeLabel@4 <i>(decoration applied to a code label declared as having one parameter)</i>
+The idea behind the <i>_Name@xx</i> decoration is that it provides a check that the number of
+parameters declared for a function is the same between the various modules (object files).
+In practice however, the added complexity of the required source code (eg. in MASM the need for EXTRN, EXTERN or
+PROTO to define the type of symbol) is very much out of proportion to the benefits achieved.
+<br>Some compilers also use decoration to enhance error reporting, but this has another problem: there is
+no consistent format for this.
+<br>Because GoAsm does not decorate symbols (unless the GoAsm /ms switch is used), GoLink does
+not expect symbol decoration. This means that if you want to use GoLink to link files made with a
+third party compiler which decorates symbols you must specify the /mix switch. This will cause GoLink to
+strip out decoration when comparing symbol names. 
+<br>If you use the /mix switch, you will be unable to use a single leading underscore intentionally to
+differentiate between symbols. For example GoLink will regard _DOG and DOG as the same name.
+<br>If the /mix switch is used, symbols of types IMAGE_SYM_CLASS_STATIC and IMAGE_SYM_CLASS_LABEL
+will be limited to the module (object file) in which they appear, as expected by third party
+compilers. Otherwise, if these types have the same name GoLink will complain about duplicate symbols.
+<br>The /mix switch may also resolve problems if you have merged in a GoAsm module static library
+code made with such third party tools. If such code calls or references other such merged code,
+it is possible that this will be done with decorated symbols. These would not be recognised by
+GoLink unless the /mix switch is used.
+</td></tr>
+
+<tr><td><a NAME="more"></a><b>/more</b>
+</td><td>
+<b>= show console screenful then wait for input.</b>
+<br><font size="-1">See <a href="#output">screen output - controlling, limiting and redirecting</a>.
+</td></tr>
+
+<tr><td><a NAME="nswitches"></a>
+<b>/ne</b>
+<br><b>/ni</b>
+<br><b>/nw</b>
+<br><b>/no</b>
+</td><td>
+<b>= no error messages.</b><br>
+<b>= no information messages.</b><br>
+<b>= no warning messages.</b><br>
+<b>= no output messages at all.</b>
+<br><font size="-1">If you are using a makefile you may wish to suppress output
+messages and rely only on GoLink's exit code (error=1), or you may simply
+wish to reduce the output information.
+<br>In a batch file, you can use the error return with ERRORLEVEL,
+for example the following will pause if there is an error return:-
+<pre>
+GoLink @command.fil
+IF ERRORLEVEL 1 PAUSE
+</pre>
+Error messages are those which will stop GoLink from making the executable and
+include:-
+<br>Insufficient memory; incorrect use of command line switches;
+unable to open or read a specified file; files in
+wrong format or corrupted; incorrect information given for output file; 
+unable to make output file; specified entry point not found or not in a code
+section; duplicate Resource Type, nameID or Language found in res file;
+no defective or duplicate ordinal number if direct import/export by ordinal;
+symbols declared more than once; symbols not declared at all; exported symbols 
+not found.
+<br>Information messages are copyright and output information.
+<br>Warning messages do not stop the executable being made. They include
+entry point not found and no exports in a DLL.
+<br>See also <a href="#output">screen output - controlling, limiting and redirecting</a>.
+</td></tr>
+
+<tr><td>
+<b>/nxcompat</b>
+</td><td>
+<b>= specify that the executable is compatible with Data Execution Prevention (DEP).</b>
+<br><font size="-1">This sets the IMAGE_DLLCHARACTERISTICS_NX_COMPAT flag. The operating system and subsystem versions are set to 5.1.
+</td></tr>
+
+<tr><td>
+<b>/osversion xxxx</b>
+</td><td>
+<b>= set the operating system major and minor version number.</b>
+<br><font size="-1">This is a 32 bit hex value with a default value of 00040000 for version 4.0
+adjusted to version 5.1 with use of /nxcompat or /dynamicbase, or version 5.2 for a 64-bit file.
+</td></tr>
+
+<tr><td><a NAME="sinit"></a>
+<b>/stackinit xxxx</b>
+</td><td>
+<b>= initial stack commitment on start-up and on new threads.</b>
+<br><font size="-1">Here you can specify the size in bytes (using hex)
+of the amount of memory which the system should commit for the stack when the
+application starts or when making a new thread. If you do not use this
+switch a value of 10000h (64KB) is used
+by default. Regardless of the value specified using this switch the system
+always enlarges the amount of committed memory in the stack in 4K chunks as
+the application needs it.
+<br>This switch may be used if your application needs to create space for
+a large amount of local data. Without this
+switch an exception could occur if your local data is larger than 4K. The reason
+for this is that the system uses Structured Exception Handling to manage the
+enlargement of the stack as and when it is needed, and it does this by establishing
+guard pages just adjacent to and deeper into the area of stack already committed.
+If your application attempts to write or read from a place beyond these guard 
+pages, a true exception will occur rather than a signal
+to the system to create more stack. In experiments the size of the guard pages
+seems to vary but it is unlikely that it could ever be below 4K which is the
+normal page size.
+</td></tr>
+
+<tr><td>
+<b>/stacksize xxxx</b>
+</td><td>
+<b>= stack allocation size on start-up or on new threads.</b>
+<br><font size="-1">Here you can specify the size in bytes (using hex)
+of the area of memory which the system should allocate for potential 
+stack use, should the application require it. If you do not use this
+switch a value of 100000h (1MB) is used by default. At start-up
+the system merely allocates space in virtual memory and only a small amount
+is committed at first. The system commits the remainder automatically
+in 4K chunks if the application needs it.
+<br>The value given with this switch applies both to the main thread of
+the application and also any new threads it makes.
+<br>This switch may be used if your application might need more than 1MB
+of stack space. Specifying more than 1MB does not use memory unnecessarily
+since the memory is only committed if it is actually used. Normally 1MB is more
+than sufficient for the stack, but you would need this switch if you were
+keeping large amounts of local data on the stack in procedures which were
+highly recursive.
+</td></tr>
+
+<tr><td>
+<b>/subsystemversion xxxx</b>
+</td><td>
+<b>= set the subsystem major and minor version number.</b>
+<br><font size="-1">This is a 32 bit hex value with a default value of 00040000 for version 4.0,
+adjusted to version 5.1 with use of /nxcompat or /dynamicbase, or version 5.2 for a 64-bit file.
+</td></tr>
+
+<tr><td><a NAME="unused"></a>
+<b>/unused</b>
+</td><td>
+<b>= report on unused/unreferenced labels.</b>
+<br><font size="-1"><i>this only works with GoAsm object files or "Go"
+compatible object files see <a href="#spec">technical note</a></i>.
+If this switch is used, GoLink will report on those data and code labels
+which have not been referenced in any way. Such redundant data declarations
+or code are easily left in the source code by mistake during development
+of a program. Now you can discover these and weed them out.
+</td></tr>
+
+<tr><td><a NAME="uponly"></a>
+<b>/uponly</b>
+</td><td>
+<b>= specify the uponly flag.</b>
+<br><font size="-1">This sets the IMAGE_FILE_UP_SYSTEM_ONLY flag which indicates to
+Windows that the file (usually a driver) may only be used on single-processor machines.
+</td></tr>
+
+<tr><td>
+<b>/version xxxx</b>
+</td><td>
+<b>= set image version to major minor value.</b>
+<br><font size="-1">This is a 32 bit hex value so /version 20001 sets major version value to 2
+and minor version value to 1.
+</td></tr>
+
+<tr><td><a NAME="wdm"></a>
+<b>/wdm</b>
+</td><td>
+<b>= make a Windows Driver Model driver.</b>
+<br><font size="-1">GoLink makes a WDM driver if this switch is used. This is a driver
+which is designed for multiple Windows platforms. It is not necessary to specify the
+/driver flag as well. See also <a href="#driver">making a driver</a>
+and <a href="#uponly">specifying the uponly flag</a>.
+</td></tr>
+</table>
+
+<br>
+<a NAME="impexp"></a><h2>Importing and exporting functions and data<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<h3>Importing data</h3>
+<p>Data can only be imported <i>indirectly</i>. That is to say you can only import a
+<i>pointer</i> to data. However, using that pointer you can get the data itself.
+<br>For example, assuming DATA_VALUE is a data export in another program
+in GoAsm you get the pointer and the data as follows:-
+<pre>
+MOV EBX,[DATA_VALUE]       ;get pointer to DATA_VALUE
+MOV EAX,[EBX]              ;get the value
+</pre>
+In the same way as for importing procedures from other programs at
+link-time you give GoLink the name of the executable
+containing the import.
+
+<h3>Direct importing by ordinal</h3>
+<p>The usual method of importing a function in a DLL is effected by using
+CALL <i>procedure</i>, which will import the procedure by <i>name</i>.
+What happens here is that
+when the Windows loader starts the program it searches through the DLLs for
+the imports required by the program. This is done by comparing the names
+of the DLL exports against the names of the program's imports. To speed up
+this process with <i>private</i> DLLs sometimes exporting and importing by 
+ordinal is used. Then
+the loader can find the correct import by using an index to a table within
+the DLL. Note that it is unwise to use this method for Windows system DLLs
+since the ordinal values of the exports are not guaranteed to be the
+same in all DLL versions.
+<p>Using GoLink and its companion program GoAsm, you can import by
+ordinal using this simple syntax in the assembler source script:-
+<pre>
+CALL MyDll:6
+</pre>
+This will call procedure number 6 in MyDll.dll. The way this works is that
+GoAsm simply passes the symbol "MyDll:6" to GoLink in the object file.
+GoLink knows this is an import by ordinal because of the presence of the colon.
+Note that the extension
+"dll" is assumed if no extension is given. Suppose you want a DLL to call
+a function in the main executable by ordinal, then you could use:-
+<pre>
+CALL Main.exe:15
+</pre>
+This calls the 15th function in Main.exe.
+<br>Calls to ordinals using the absolute form (using opcodes FF15) will result
+from using this syntax:-
+<pre>
+CALL [Main.exe:15]
+</pre>
+You should not include the <i>path</i> of the file in the call. GoLink 
+will look for the file using the same <a href="#search">search order</a> as
+when looking for DLLs. If it is necessary to
+provide a path this should be provided in the command line or in a command
+file rather than incorporated in the call in the assembler script.
+<br>If you are not using GoAsm, you will still be able to use this method of
+importing by ordinal, provided your assembler will permit a symbol containing
+a colon (and a period if you need to add the extension).
+<br>Obviously in order to use this method of calling a function by ordinal
+you must ensure that the ordinal number of the function
+is fixed see <a href="#expord">exporting by ordinal</a>.
+
+<a NAME="imports"></a><h3>Importing by specific DLL</h3>
+<p>Occasionally you may want to force the linker to use an import from a 
+specific DLL. You might need to do this if two or more DLLs (given to
+the linker at link-time) offer functions
+with the same name. 
+<br>You may also need to do this to override an API call
+when using the Microsoft Layer for Unicode using GoLink and the /mslu 
+switch. This will add special loader code to your executable
+which will cause your application to call the relevant API in unicows.dll
+at run-time if running under Windows 95, 98 or ME. If you have written
+your own wrapper around a particular API you may need to stop this happening.
+You can therefore force GoLink to link to a particular DLL using the
+the syntax <i>NameOfDll:NameOfAPI</i>.
+<p>For example, if you do not want to call EnableWindow within unicows.dll
+under any circumstances, but always call EnableWindow within User32.dll
+you would use:-
+<pre>
+User32:EnableWindow
+</pre>
+
+<a NAME="export"></a><h3>Exporting procedures and data<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h3>
+<p>You can make your procedures and your data available to other executables
+by <i>exporting</i> them. In Windows it is usual for DLLs to be used
+for exports, but sometimes a DLL will need to call a procedure or use data
+in an EXE file, and in that case the EXE file will also export. Exporting can
+be done either at link time (you tell GoLink which symbols to export), or
+using GoAsm, you can also do it at assemble time. GoAsm then tells GoLink
+the export information via the .drectve section in the object file.
+See the GoAsm help files as to how to declare
+exports at assemble time.
+<br>It is easy to declare exports at link time. You use the switch
+/export or /exports and follow this with one or more export names. Unless
+you use the \ continuation character you will need to use the switch again
+if you need to start on another line.
+<br>Example:-
+<pre>
+/EXPORT LOAD_ELEMENT
+/EXPORTS CALCULATE, ADJUST_DATA, DATA_VALUE
+</pre>
+Here three functions are exported, and then a data pointer is exported. Only
+the symbol name is needed - there is no need to tell GoLink whether the symbol
+is in a code or data section.
+
+<a NAME="expord"></a><h3>Exporting by ordinal</h3>
+<p>Normally exports are conducted <i>by name</i>. What happens here is that
+when the Windows loader starts the program it searches through the DLLs for
+the imports required by the program. This is done by comparing the names
+of the DLL exports against the names of the program's imports. To speed up
+this process with <i>private</i> DLLs sometimes exporting and importing by
+ordinal is used. Then
+the loader can find the correct import by using an index to a table within
+the DLL. Note that it is unwise to use this method for Windows system DLLs
+since the ordinal values of the exports are not guaranteed to be the
+same in all DLL versions.
+<p>In order to use this method clearly it is imperative that the
+exporting program specifies an ordinal value for a particular export and the
+linker must not change this. 
+<p>This can be done very easily, for example:-
+<pre>
+/EXPORTS CALCULATE:2, DATA_VALUE:6
+</pre>
+Here GoLink is instructed to use the ordinals 2 and 6 for the exports.
+
+<h3>Exporting by ordinal without a name</h3>
+<p>Exporting by ordinal does not stop the name of the export appearing in the 
+final executable. This is because it is the importing program which decides
+whether to import by ordinal or by name. All the exporting program can do
+is to fix the ordinal value. However sometimes a programmer might like to
+ensure no name for the export appears in the final executable. You sometimes
+see such "no name" exports in system DLLs for example, probably in order to hide
+the job carried out by particular functions. In order to do this add the word
+NONAME to the end of the export for example:-
+<pre>
+/EXPORTS CALCULATE:2:NONAME, DATA_VALUE:6:NONAME
+</pre>
+Here the value of the code label CALCULATE will be exported as ordinal number
+2, but the name of the export will not appear in the final executable. This
+means that if another program tried to call the CALCULATE function it would
+fail. The function can only be called by ordinal. This works for data as
+well, as in this example.
+
+<h3>Using Unicode for imported and exported labels</h3>
+<p>GoLink is aware that it might receive Unicode labels in the object files, and it
+expects them to be in UTF-8 format. When making the executable and making
+debug symbol information GoLink retains this format. This means you can
+import and export functions and data using Unicode (you can use non-Roman 
+characters in your symbols if you wish). Note that named resource IDs and named
+resources are treated differently. They are always in UTF-16 format as required
+by the PE format specifications.</p>
+
+<br>
+<a NAME="loadconfig"></a><h2>Exception Handling, SafeSEH, and IMAGE_LOAD_CONFIG_DIRECTORY<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<h3>32-bit Exception Handling and SafeSEH</h3>
+<p>GoLink processes the SafeSEH symbol table index information provided in .sxdata sections
+creating a sorted relative virtual address (RVA) table of the given exception handling procedures,
+supplies a default IMAGE_LOAD_CONFIG_DIRECTORY32, and makes the appropriate adjustments to the IMAGE_OPTIONAL_HEADER.
+<p>You can also manually provide this structure and table as follows using a symbol named <i>__load_config_used</i> which GoLink recognizes to make the appropriate adjustments to the IMAGE_OPTIONAL_HEADER in 32-bit files:
+<pre>
+CONST	SECTION 'const$~' ALIGN 4
+__load_config_used:     ;IMAGE_LOAD_CONFIG_DIRECTORY32
+                        DD	48h		;Size
+                        DD	0		;TimeDateStamp
+                        DW	0		;MajorVersion
+                        DW	0		;MinorVersion
+                        DD	0		;GlobalFlagsClear
+                        DD	0		;GlobalFlagsSet
+                        DD	0		;CriticalSectionDefaultTimeout
+                        DD	0		;DeCommitFreeBlockThreshold
+                        DD	0		;DeCommitTotalFreeThreshold
+                        DD	0		;LockPrefixTable
+                        DD	0		;MaximumAllocationSize
+                        DD	0		;VirtualMemoryThreshold
+                        DD	0		;ProcessHeapFlags
+                        DD	0		;ProcessAffinityMask
+                        DW	0		;CSDVersion
+                        DW	0		;Reserved1
+                        DD	0		;EditList
+                        DD	0		;SecurityCookie
+                        DD	__safe_se_handler_table		;SEHandlerTable
+__safe_se_handler_count	DD	1		;SEHandlerCount
+	
+__safe_se_handler_table:
+                        ;table of handler RVAs goes here, or added here as shown below
+
+CODE	SECTION
+	ALIGN	8
+eHandler:
+			;
+			;
+	ret
+
+CONST	SECTION 'const$~' ALIGN 4	;Alignment is important here for projects with multiple source files
+	DD	eHandler - Start + 1000h	;RVA
+</pre>
+<p>Note that in the above RVA calculation, Start would be the first label at the beginning of the CODE section which has a default starting RVA of 1000h. It is important to do it this way instead of with the image base (eHandler-400000h) to make sure that there will not be a relocation entry which would throw this figure off for the case of a DLL or use with the /dynamicbase command line switch.</p>
+<p>It is also important to use a section name similar to 'const$~' where the text after the $ is used by the linker to sort this section within the 'const' section, with use of '~' placing it at the end where it is expected in case the same or other OBJ files use the usual .sxdata method. Placement at the end of the section allows GoLink to combine and sort the manually provided RVA table with that provided from the usual .sxdata processing.</p>
+
+<h3>64-bit Exception Handling</h3>
+<p>A very different table-based method is used here with unwind and exception handler information provided in .pdata and .xdata sections. GoLink makes the appropriate adjustments to the IMAGE_OPTIONAL_HEADER and places the .xdata information into a read-only section. 64-bit executables do not use SafeSEH. However, you can still manually provide an IMAGE_LOAD_CONFIG_DIRECTORY64 structure as follows using a symbol named <i>_load_config_used</i> (note one less leading underscore) which GoLink recognizes to make the appropriate adjustments to the IMAGE_OPTIONAL_HEADER in 64-bit files:
+<pre>
+CONST	SECTION
+	ALIGN	8
+_load_config_used:	;IMAGE_LOAD_CONFIG_DIRECTORY64
+	DD	70h	;Size
+	DD	0	;TimeDateStamp
+	DW	0	;MajorVersion
+	DW	0	;MinorVersion
+	DD	0	;GlobalFlagsClear
+	DD	0	;GlobalFlagsSet
+	DD	0	;CriticalSectionDefaultTimeout
+	DQ	0	;DeCommitFreeBlockThreshold
+	DQ	0	;DeCommitTotalFreeThreshold
+	DQ	0	;LockPrefixTable
+	DQ	0	;MaximumAllocationSize
+	DQ	0	;VirtualMemoryThreshold
+	DQ	0	;ProcessAffinityMask
+	DD	0	;ProcessHeapFlags
+	DW	0	;CSDVersion
+	DW	0	;Reserved1
+	DQ	0	;EditList
+	DQ	0	;SecurityCookie
+	DQ	0	;SEHandlerTable &#8211; not used
+	DQ	0	;SEHandlerCount &#8211; not used
+</pre>
+</p>
+
+<br>
+<a NAME="spec"></a><h2>Specification for /unused switch<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<p>The /unused switch in GoLink reports data and code labels which are
+unreferenced. Usually these relate to redundant data declarations and
+code which remain after the development process. Now it is easily possible
+to discover these and to weed them out.</p>
+<p>To enable the linker to give this report it is necessary for both 
+the assembler or compiler and the linker to work together. This is because
+the assembler or compiler will often already have fixed-up references to 
+labels in the object file. For example, in this simple program:-</p>
+<pre>
+CALCULATE:
+ADD EAX,EDX
+RET
+;
+START:
+CALL CALCULATE
+RET
+</pre>
+<p>The CALL to the function CALCULATE will be coded as a relative call, and
+since both the CALL itself and the destination of the CALL are in the
+same section the assembler will know and be able to apply the correct 
+distance for execution to be transferred. This means that there will
+be no COFF relocation in relation to the CALL in the object file and the 
+linker will have no fix-up to do. In turn this means that the linker will 
+have no means of knowing whether the label CALCULATE has been referenced 
+or not.</p>
+<p>In "Go" format object files, any symbol which
+is referenced and dealt with by the assembler or compiler has the flag
+2000h set at +0Eh in the symbol table (this is the "type" field in the
+symbol table). If GoLink finds this flag set, the symbol concerned will
+not be reported as unreferenced. Accordingly the information from the
+assembler or compiler ensures that GoLink's unused label report is accurate.</p>
+<p>This flag can also be used by the assembler or compiler to ensure
+that certain labels are omitted from GoLink's unused report. For example,
+GoAsm regards each named member of a structure as a label in its own right.
+Since it is likely that a number of such members are not directly referenced
+they will appear in the unused report unless they are suppressed. Accordingly
+GoAsm flags all structure members as 2000h (but not the structure label
+itself) to suppress these labels in the unused report.</p>
+<p>In practice it is also necessary for the assembler or compiler to
+indicate to GoLink that the object file is in "Go" format. This is
+achieved by ensuring that the very first symbol (ie. the first symbol
+table record in the object file) has the symbol name ".GoAsm" (without the
+quotation marks), with a section number of -2, and a storage class
+of 67h. GoLink then knows that it can give an accurate report of unused
+labels if the /unused switch is set by the user.</p>
+<p>GoLink does not look for symbols in .res files or .obj files which
+contain only resource information, so it is not necessary to change the
+formats of those.</p>
+
+<a NAME="legal"></a><h2>Legal stuff<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<h3>Copyright</h3>
+<p>GoLink is copyright &copy; Jeremy Gordon 2002-2018 [MrDuck Software] - all rights reserved.</p>
+
+<h3>Licence and distribution</h3>
+<p>You may use GoLink free for any purpose. You may redistribute
+GoLink freely (but not for payment nor for use with a program
+or any material for which the user is asked to pay).
+You are not entitled to hide or deny my copyright.</p>
+
+<h3>Disclaimer</h3>
+<p>The author has made every effort to ensure that the output of GoLink
+is accurate, but you do use it entirely at your own risk. The author
+does not accept any liability for it failing to work properly or giving
+the wrong output nor for any errors in this manual.</p>
+
+<a NAME="ack"></a><h2>Acknowledgements<a href="#top"><img SRC="up.gif" BORDER=0 height=12 width=24>top</a></h2>
+<p>My grateful thanks to <a href="http://wjradburn.com/software/">Wayne J. Radburn</a>, of
+Gatineau, Qu&eacute;bec, in particular for recent amendments to the source, and to
+Anthony Williams, of Brixham, Devon England, author of ALINK.
+And thanks for your ideas, support and bug reports
+Leland M. George of West Virginia, Daniel Fazekas of Budapest,
+Brian Becker and members of the GoAsm Assembler and Tools forum.</p>
+</body>
+</html>
