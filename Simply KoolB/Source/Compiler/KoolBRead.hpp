@@ -128,13 +128,65 @@ bool Reading::SkipWhiteSpace(){
 }
 
 
+// GetIdentifier() adds the next character to our word while the next character
+// is part of the alphabet or a digit. When the do statement conditions to
+// exit, it stops and assigns Identifier to TypeOfWord.
+void Reading::GetIdentifier(){ 
+    do {
+        CurrentWord += toupper(Book[BookMark]);
+        ++BookMark;
+    } while (isalpha(Book[BookMark]) or isdigit(Book[BookMark]));
+
+    TypeOfWord = Identifier;
+}
 
 
+// GetNumber()
+// A number is an integer or floating point number (i.e. has one decimal)
+void Reading::GetNumber(){
+    bool ReachedDot = false;
+    do {
+        if (Book[BookMark] == '.') {
+
+            // Each number can contain at most one decimal point
+            if (ReachedDot == true) {
+                std::cout << "TypeError on line: " << CurrentLine << std::endl;
+                std::cout << "Found two consecutive decimal points, exiting..."
+                          << std::endl;
+                exit(0); // Exit sucessfully
+            }
+            ReachedDot = true;
+        }
+            CurrentWord += Book[BookMark];
+            ++BookMark;
+    } while (isdigit(Book[BookMark]) or Book[BookMark] == '.');
+
+    // If both are true, we have at least one decimal point
+    if (CurrentWord.length() == 1 and ReachedDot == true) {
+        TypeOfWord = Symbol;
+    }
+    else {
+        TypeOfWord = Number;
+    }
+} 
 
 
-
-
-
-
+// GetString()
+// A string is anything that comes between two double quotes
+// We only want the contents of the string.
+void Reading::GetString() {
+    ++BookMark;
+    while (Book[BookMark] != '\"') {
+        CurrentWord += Book[BookMark];
+        ++BookMark;
+        if (BookMark > BookLength or Book[BookMark] == '\n') {
+            cout << "Error on line: " << CurrentLine << endl;
+            cout << "Could not locate end of the string, exiting..." << endl;
+            exit(0);
+        }
+    }
+    ++BookMark;
+    TypeOfWord = String;
+} 
 
 
