@@ -1,41 +1,92 @@
 #include <iostream>
-#include <stdlib.h>
-#include <string>
 #include <windows.h>
 
 
+enum OS{Windows, Linux};
+enum AppType{GUI, Console, CGI};
+int OS = Windows;
+int AppType = Console;
 
-// Global variables
-std::string FileName;
 
-// General functions
-void RequestFile();
+// Include Read and Write modules
+#include "KoolBRead.hpp"
+#include "Write.hpp"
+
+#include "Assembly.hpp"
+#include "Misc.hpp"
+
+Reading read;
+Writing write;
+Assembly Asm;
+
+
+void Start();
+void Compile(int argc, char* argv[]);
+void Stop();
+
+DWORD StartTime;
+
+
 
 
 int main(int argc, char *argv[]) {
-    // Print welcome
-    std::cout << "Simply KoolB Compiler" << std::endl << std::endl;
-    // Check for an existing filename
-    if (argc != 2) {
-        RequestFile();
-    }
-    else {
-        FileName = argv[1];
-    }
-
-    std::cout << "User wants to compile the file:" << FileName
-              << std::endl << std::endl;
-
-    system("PAUSE");
+    std::cout << "Compiling the program..." << std::endl;
+    Start();
+    Compile(argc, argv);
+    Stop();
     return 0;
 }
 
-void RequestFile() {
-    char Temp[1024];
 
-    // Prompt user for the name of the file to compile
-    std::cout << "Please enter the file to compile: ";
-    std::cin.getline(Temp, 1024);
-    FileName = Temp;
-    std::cout << std::endl << std::endl;
+void Start() {
+    StartTime = GetTickCount();
+    return ;
+}
+
+
+void Compile(int argc, char* argv[]) {
+    // Create two strings to hold the FileName and the TargetOS
+    std::string FileName;
+    std::string TargetOS;
+
+    // If arg count is invalid, print the usage and exit
+    if (argc < 2 || argc > 4) {
+        std::cout << "Usage: <compiler-executable> [OS] <filename>" << std::endl << std::endl;
+        std::cout << "\tOptions:" << std::endl;
+        std::cout << "\t-Windows\tCompile for Windows" << std::endl;
+        std::cout << "\t-Linux\t\tCompile for Linux" << std::endl;
+        exit(1);
+    }
+
+    if (argc == 3) {
+        TargetOS = argv[1]; // assign TargetOS the second parameter
+        FileName = argv[2]; // assign FileName the third parameter
+        if (TargetOS == "-Windows" || TargetOS == "-Linux") {
+            if (TargetOS == "-Linux") {
+                OS = Linux;
+            }
+        }
+        else {
+            std::cout << "Usage: <compiler-executable> [OS] <filename>" << std::endl << std::endl;
+            std::cout << "\tOptions:" << std::endl;
+            std::cout << "\t-Windows\tCompile for Windows" << std::endl;
+            std::cout << "\t-Linux\t\tCompile for Linux" << std::endl;
+            exit(1);
+        }
+    }
+    else {
+    FileName = argv[1];
+    }
+    
+    read.OpenBook(FileName);
+    Asm.BuildSkeleton();
+    Asm.FinishUp();
+    write.BuildApp(FileName);
+    return  ;
+}
+
+
+void Stop() {
+    std::cout << "Compile Time:\t " << (GetTickCount() - StartTime) / 1000.0  << std::endl;
+    return ;
 }
