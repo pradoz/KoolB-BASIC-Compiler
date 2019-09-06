@@ -14,7 +14,7 @@ DWORD StartTime;
 
 
 int main(int argc, char *argv[]) {
-    std::cout << "Welcome to the Simply KoolB Compiler!" << std::endl;
+    std::cout << "Compiling the program..." << std::endl;
     Start();
     Compile(argc, argv);
     Stop();
@@ -30,7 +30,7 @@ void Start() {
 
 void Compile(int argc, char* argv[]) {
     if (argc != 2) {
-       std::cout << "Usage: KoolB <filename>" << std::endl;
+       std::cout << "Usage: <compiler-executable> <filename>" << std::endl;
        exit(1);
     }
 
@@ -52,15 +52,18 @@ void Compile(int argc, char* argv[]) {
         case Read.Symbol:
             std::cout << "Found Symbol:\t\t" << Read.Word() << std::endl;
             break;
+        case Read.Number:
+            std::cout << "Found Number:\t\t" << Read.Word() << std::endl;
+            break;
         case Read.EndOfLine:
             // std::cout << "Found EndOfLine:\t\t" << Read.Word() << std::endl;
             break;
         default:
-            std::cout << "ERR: Unable to report what happened." << std::endl;
+            std::cout << "ERR: Unable to report what happened." << Read.Word() << std::endl;
             break;
         }
-        // Sleep for 150ms then get the next word.
-        Sleep(150);
+        // Sleep for 100 ms then get the next word.
+        // Sleep(100);
         Read.GetNextWord();
     }
     return ;
@@ -68,8 +71,6 @@ void Compile(int argc, char* argv[]) {
 
 
 void Stop() {
-    std::cout << "Compile Time:\t"
-              << static_cast<float>((GetTickCount() - StartTime) / 1000.0)
-              << std::endl;
+    std::cout << "Compile Time:\t " << (GetTickCount() - StartTime) / 1000.0  << std::endl;
     return ;
 }

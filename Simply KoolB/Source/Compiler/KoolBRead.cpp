@@ -102,7 +102,7 @@ void Reading::GetIdentifier(){
 
 // GetNumber()
 // A number is an integer or floating point number (i.e. has one decimal)
-void Reading::GetNumber(){
+void Reading::GetNumber() {
     bool ReachedDot = false;
     do {
         if (Book[BookMark] == '.') {
@@ -139,7 +139,8 @@ void Reading::GetString() {
         CurrentWord += Book[BookMark];
         ++BookMark;
         if (BookMark > BookLength or Book[BookMark] == '\n') {
-            std::cout << "SyntaxError on line: " << CurrentLine << std::endl;
+            std::cout << "SyntaxError on line: " << CurrentLine << ", at "<< CurrentWord << std::endl;
+
             std::cout << "ERR: Closing quotation mark not found on string." << std::endl;
             exit(0);
         }
