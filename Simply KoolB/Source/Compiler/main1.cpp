@@ -15,6 +15,11 @@ int AppType = Console;
 #include "Assembly.hpp"
 #include "Misc.hpp"
 
+Reading read;
+Writing write;
+Assembly Asm;
+
+
 void Start();
 void Compile(int argc, char* argv[]);
 void Stop();
@@ -40,44 +45,44 @@ void Start() {
 
 
 void Compile(int argc, char* argv[]) {
-    if (argc != 2) {
-       std::cout << "Usage: <compiler-executable> <filename>" << std::endl;
-       exit(1);
+    // Create two strings to hold the FileName and the TargetOS
+    std::string FileName;
+    std::string TargetOS;
+
+    // If arg count is invalid, print the usage and exit
+    if (argc < 2 || argc > 4) {
+        std::cout << "Usage: <compiler-executable> [OS] <filename>" << std::endl << std::endl;
+        std::cout << "\tOptions:" << std::endl;
+        std::cout << "\t-Windows\tCompile for Windows" << std::endl;
+        std::cout << "\t-Linux\t\tCompile for Linux" << std::endl;
+        exit(1);
     }
 
-    Reading Read = Reading();
-
-    // Open the file, pass it to OpenBook()
-    Read.OpenBook(argv[1]);
-    Read.GetNextWord();
-
-    while (Read.WordType() != Read.None) {
-        // Loop through each word and print out its type.
-        switch (Read.WordType()) {
-        case Read.Identifier:
-            std::cout << "Found Identifier:\t\t" << Read.Word() << std::endl;
-            break;
-        case Read.String:
-            std::cout << "Found String:\t\t" << Read.Word() << std::endl;
-            break;
-        case Read.Symbol:
-            std::cout << "Found Symbol:\t\t" << Read.Word() << std::endl;
-            break;
-        case Read.Number:
-            std::cout << "Found Number:\t\t" << Read.Word() << std::endl;
-            break;
-        case Read.EndOfLine:
-            // std::cout << "Found EndOfLine:\t\t" << Read.Word() << std::endl;
-            break;
-        default:
-            std::cout << "ERR: Unable to report what happened." << Read.Word() << std::endl;
-            break;
+    if (argc == 3) {
+        TargetOS = argv[1]; // assign TargetOS the second parameter
+        FileName = argv[2]; // assign FileName the third parameter
+        if (TargetOS == "-Windows" || TargetOS == "-Linux") {
+            if (TargetOS == "-Linux") {
+                OS = Linux;
+            }
         }
-        // Sleep for 100 ms then get the next word.
-        Sleep(100);
-        Read.GetNextWord();
+        else {
+            std::cout << "Usage: <compiler-executable> [OS] <filename>" << std::endl << std::endl;
+            std::cout << "\tOptions:" << std::endl;
+            std::cout << "\t-Windows\tCompile for Windows" << std::endl;
+            std::cout << "\t-Linux\t\tCompile for Linux" << std::endl;
+            exit(1);
+        }
     }
-    return ;
+    else {
+    FileName = argv[1];
+    }
+    
+    read.OpenBook(FileName);
+    Asm.BuildSkeleton();
+    Asm.FinishUp();
+    write.BuildApp(FileName);
+    return  ;
 }
 
 

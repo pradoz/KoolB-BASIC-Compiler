@@ -31,8 +31,7 @@ void Run(std::string Command) {
     File.seekg(0, std::ios::beg);
 
     if (FileEnd - FileStart > 0) {
-        std::cout << "Error: nasm, GoRC, or GoLink failed. Please attach error
-            messages to bug repots:" << std::endl; 
+        std::cout << "Error: nasm, GoRC, or GoLink failed. Please attach error messages to bug repots:" << std::endl;
         std::cout << "Ran " + Command + " and got:" << std::endl;
         Spoon = new char[FileEnd - FileStart];
         File.read(Spoon, FileEnd - FileStart);
@@ -42,4 +41,16 @@ void Run(std::string Command) {
         exit(1);
     }
     File.close();
+}
+
+
+// ToStr() takes an integer, converts it to a string, and returns the string.
+std::string ToStr(int Number) {
+    std::string Result;
+    char* Spoon;
+    Spoon = new char[1024];
+    sprintf(Spoon, "%i", Number);
+    Result = Spoon;
+    delete[] Spoon;
+    return Result;
 }

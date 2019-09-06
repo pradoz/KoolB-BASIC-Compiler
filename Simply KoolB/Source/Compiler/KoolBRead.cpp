@@ -2,7 +2,7 @@
 #include <iostream>
 
 
-void Reading::OpenBook(std::string FileName){
+void Reading::OpenBook(std::string FileName) {
     std::ifstream File(FileName.c_str(), std::ios::in);
     long FileStart;
     long FileEnd;
@@ -38,23 +38,23 @@ void Reading::OpenBook(std::string FileName){
 // --------------------------------------------------------
 // GetNextWord() 
 // --------------------------------------------------------
-void Reading::GetNextWord(){
-    if (SkipWhiteSpace() == false){
+void Reading::GetNextWord() {
+    if (SkipWhiteSpace() == false) {
         return ;
     }
-    if (isalpha(Book[BookMark])){
+    if (isalpha(Book[BookMark])) {
         GetIdentifier();
         return ;
     }
-    if (isdigit(Book[BookMark]) or Book[BookMark] == '.'){
+    if (isdigit(Book[BookMark]) or Book[BookMark] == '.') {
         GetNumber();
         return ;
     }
-    if (Book[BookMark] == '\"'){
+    if (Book[BookMark] == '\"') {
         GetString();
         return ;
     }
-    if (ispunct(Book[BookMark])){
+    if (ispunct(Book[BookMark])) {
         GetSymbol(); 
         return ;
     }
@@ -65,7 +65,7 @@ void Reading::GetNextWord(){
 // SkipWhiteSpace()
 // Returns false if it found an end of line, otherwise it will return true
 // because it skipped all exisitng white space. 
-bool Reading::SkipWhiteSpace(){
+bool Reading::SkipWhiteSpace() {
     CurrentWord = "";
     while (isspace(Book[BookMark]) or Book[BookMark] == '\'') {
         if (Book[BookMark] == '\'') {
@@ -90,7 +90,7 @@ bool Reading::SkipWhiteSpace(){
 // GetIdentifier() adds the next character to our word while the next character
 // is part of the alphabet or a digit. When the do statement conditions to
 // exit, it stops and assigns Identifier to TypeOfWord.
-void Reading::GetIdentifier(){ 
+void Reading::GetIdentifier() { 
     do {
         CurrentWord += toupper(Book[BookMark]);
         ++BookMark;
