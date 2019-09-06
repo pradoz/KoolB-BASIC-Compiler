@@ -10,14 +10,16 @@ int AppType = Console;
 
 // Include Read and Write modules
 #include "KoolBRead.hpp"
+Reading Read;
+
 #include "Write.hpp"
+Writing Write;
 
 #include "Assembly.hpp"
+Assembly Asm;
+
 #include "Misc.hpp"
 
-Reading Read;
-Writing Write;
-Assembly Asm;
 
 
 void Start();
