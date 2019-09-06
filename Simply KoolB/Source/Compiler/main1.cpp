@@ -63,7 +63,7 @@ void Compile(int argc, char* argv[]) {
             break;
         }
         // Sleep for 100 ms then get the next word.
-        // Sleep(100);
+        Sleep(100);
         Read.GetNextWord();
     }
     return ;
