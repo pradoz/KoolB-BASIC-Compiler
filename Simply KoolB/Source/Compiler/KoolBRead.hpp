@@ -1,3 +1,6 @@
+#ifndef KOOLBREAD_HPP
+#define KOOLBREAD_HPP
+
 #include <fstream>
 #include <string>
 
@@ -40,3 +43,5 @@ private:
     std::string CurrentWord;
     int TypeOfWord;
 };
+
+#endif // KOOLBREAD_HPP

@@ -15,8 +15,8 @@ int AppType = Console;
 #include "Assembly.hpp"
 #include "Misc.hpp"
 
-Reading read;
-Writing write;
+Reading Read;
+Writing Write;
 Assembly Asm;
 
 
@@ -78,10 +78,10 @@ void Compile(int argc, char* argv[]) {
     FileName = argv[1];
     }
     
-    read.OpenBook(FileName);
+    Read.OpenBook(FileName);
     Asm.BuildSkeleton();
     Asm.FinishUp();
-    write.BuildApp(FileName);
+    Write.BuildApp(FileName);
     return  ;
 }
 

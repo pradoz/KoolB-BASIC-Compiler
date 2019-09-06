@@ -1,6 +1,11 @@
+#ifndef WRITE_HPP
+#define WRITE_HPP
+
+
+
 #include <fstream>
 #include <string>
-
+#include <windows.h>
 #include "Misc.hpp"
 
 class Writing {
@@ -93,15 +98,15 @@ void Writing::Comment(int Section, std::string Comment) {
 }
 
 
-void Writing::File(string FileName) {
+void Writing::File(std::string FileName) {
     std::string AsmFileName = FileName + ".asm";
     std::string ResourceFileName = FileName + ".rc";
     std::ofstream AsmFile;
     std::ofstream ResourceFile;
 
     // Open the assembly and resource files
-    AsmFile.open(AsmFileName.c_str(), ios::out);
-    ResourceFile.open(ResourceFileName.c_str(), ios::out);
+    AsmFile.open(AsmFileName.c_str(), std::ios::out);
+    ResourceFile.open(ResourceFileName.c_str(), std::ios::out);
 
     // Write to assembly file
     AsmFile << Library << std::endl;
@@ -141,3 +146,5 @@ void Writing::BuildApp(std::string FileName) {
         return ;
     }
 }
+
+#endif // WRITE_HPP

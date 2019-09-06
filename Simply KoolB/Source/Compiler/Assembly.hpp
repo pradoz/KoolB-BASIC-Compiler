@@ -1,3 +1,6 @@
+#ifndef ASSEMBLY_HPP
+#define ASSEMBLY_HPP
+
 #include <string>
 
 #include "Write.hpp"
@@ -19,6 +22,7 @@ public:
 
 private:
     int LabelNumber;
+    Writing Write;
 };
 
 
@@ -34,7 +38,7 @@ void Assembly::AddLibrary(std::string FunctionName) {
 // temporary label.
 std::string Assembly::GetLabel() {
     std::string Result;
-    LabelNumber++;
+    ++LabelNumber;
     Result = "Label" + ToStr(LabelNumber);
     return Result;
 }
@@ -84,3 +88,5 @@ void Assembly::FinishUp(){
         Write.Line(Write.ToFinishUp, "ccall exit,0");
     }
 }
+
+#endif // ASSEMBLY_HPP
