@@ -2,6 +2,7 @@
 #include <windows.h>
 
 #include "KoolBRead.hpp"
+#include "Write.hpp"
 
 
 void Start();
