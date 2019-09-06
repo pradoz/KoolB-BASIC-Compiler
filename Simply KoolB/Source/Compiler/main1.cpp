@@ -1,9 +1,19 @@
 #include <iostream>
 #include <windows.h>
 
+
+enum OS{Windows, Linux};
+enum AppType{GUI, Console, CGI};
+int OS = Windows;
+int AppType = Console;
+
+
+// Include Read and Write modules
 #include "KoolBRead.hpp"
 #include "Write.hpp"
 
+#include "Assembly.hpp"
+#include "Misc.hpp"
 
 void Start();
 void Compile(int argc, char* argv[]);
