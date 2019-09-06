@@ -22,7 +22,7 @@ public:
 
 private:
     int LabelNumber;
-    Writing Write;
+    // Writing Write;
 };
 
 
@@ -65,6 +65,7 @@ void Assembly::BuildSkeleton() {
         Write.Line(Write.ToFireUp, "global START");
         PostLabel(Write.ToFireUp, "START");
         PostLabel(Write.ToFinishUp, "Exit");
+
     }
     if (OS == Linux) {
         AddLibrary("exit");
@@ -80,8 +81,8 @@ void Assembly::BuildSkeleton() {
 
 // FinishUp() does the opposite of BuildSkeleton. It ensures KoolB app can
 // shut down and exit properly. It is essentially a clean up function.
-void Assembly::FinishUp(){
-    if (OS == Windows){
+void Assembly::FinishUp() {
+    if (OS == Windows) {
         Write.Line(Write.ToFinishUp, "stdcall ExitProcess,0");
     }
     if (OS == Linux){

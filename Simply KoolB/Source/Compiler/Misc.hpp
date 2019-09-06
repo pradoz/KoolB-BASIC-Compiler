@@ -15,7 +15,6 @@
 // size of results.txt is greater than zero, it reads the contents, reports the errors,
 // and exits from the program. 
 void Run(std::string Command) {
-    std::cout << "CURRENT COMMAND: " << Command << std::endl;
     std::ifstream File;
     int FileStart;
     int FileEnd;
