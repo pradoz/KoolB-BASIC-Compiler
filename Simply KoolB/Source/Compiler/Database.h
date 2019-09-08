@@ -608,38 +608,227 @@ std::string Database::GetScopeID() {
     return Mangle == true
            ? "Scope" + ToStr(UniqueScopeID) + "__"
            : Result = "";
-    // if (Mangle == true) {
-    //     Result = "Scope" + ToStr(UniqueScopeID) + "__";
-    // }
-    // else {
-    //     Result = "";
-    // }
-    // return Result;
 }
 
 
+// SetAsmName() sets the assembly language name for simple data types and UDTs
+void Database::SetAsmName(std::string Name, std::string AsmName) {
+    for (int Level = ScopeLevel; Level >= 0; --Level) {
+        if (Scope[Level].SimpleDataTypes.find(Name) != 
+                Scope[Level].SimpleDataTypes.end()) {
+            Scope[Level].SimpleDataTypes[Name].AsmName = AsmName;
+            return ;
+        }
+        if (Scope[Level].UDTDataTypes.find(Name) != 
+                Scope[Level].UDTDataTypes.end()) {
+            Scope[Level].UDTDataTypes[Name].AsmName = AsmName;
+            return ;
+        }
+    }
+}
+
+// GetTypeData() returns information related to types
+TypeDataInfo& Database::GetTypeData(std::string Name) {
+    for (int Level = ScopeLevel; Level >= 0; --Level) {
+        if (Scope[Level].Types.find(Name) != Scope[Level].Types.end()) {
+            return Scope[Level].Types[Name];
+        }
+    }
+}
+
+// GetSizeOfParameters() gets the size of all the parameters of a function
+int Database::GetSizeOfParameters(std::string Name) {
+    for (int Level = ScopeLevel; Level >= 0; --Level) {
+        if (Scope[Level].SubFunctions.find(Name) != 
+                Scope[Level].SubFunctions.end()) {
+            return Scope[Level].SubFunctions[Name].SizeOfParameters;
+        }
+    }
+}
+
+// IsInsideSubFunction() are we inside a subroutine or function?
+bool Database::IsInsideSubFunction() {
+    return InsideSubFunction;
+}
+
+// AddLocalVariable() adds a local variable to a function
+std::string Database::AddLocalVariable(int Type) {
+    --ScopeLevel;
+    if (InsideSubFunction == true) {
+        if (Scope[ScopeLevel].SubFunctions.find(LastSubFunction) != 
+                Scope[ScopeLevel].SubFunctions.end()) {
+            if (Type == Double) {
+                Scope[ScopeLevel].SubFunctions[LastSubFunction].SizeOfLocalVariables-=8;
+            }
+            else {
+                Scope[ScopeLevel].SubFunctions[LastSubFunction].SizeOfLocalVariables-=4;            
+            }
+            std::string Size = ToStr(Scope[ScopeLevel].SubFunctions[LastSubFunction].
+                                                    SizeOfLocalVariables);
+            ++ScopeLevel;
+            return Size;
+        }
+    }
+    ++ScopeLevel;
+}
 
 
+// AddExternalSubFunctionData() adds information relating to an external function
+(WinAPI) to the external function.
+void Database::AddExternalSubFunctionData(std::string Name, std::string Library, 
+                                                                                    std::string Alias, std::string CallConv) {
+    --ScopeLevel;
+    Scope[ScopeLevel].SubFunctions[Name].External = true;    
+    Scope[ScopeLevel].SubFunctions[Name].ExternalInfo.Library = Library;    
+    Scope[ScopeLevel].SubFunctions[Name].ExternalInfo.Alias = Alias;    
+    Scope[ScopeLevel].SubFunctions[Name].ExternalInfo.CallingConv = CallConv;    
+    ++ScopeLevel;
+    return ;
+}
 
 
+// SetParameterPoolSizeFilled() sets how much of the parameter pool is filled
+void Database::SetParameterPoolSizeFilled(std::string Name, int HowMuch) {
+    for (int Level = ScopeLevel; Level >= 0; --Level) {
+        if (Scope[Level].SubFunctions.find(Name) !=Scope[Level].SubFunctions.end()) {
+            Scope[Level].SubFunctions[Name].ParameterPoolFilled = HowMuch;
+            return ;
+        }
+    }
+}
 
 
+// GetParameterPoolSizeFilled() gets how much of the parameter pool is filled
+int Database::GetParameterPoolSizeFilled(std::string Name) {
+    for (int Level = ScopeLevel; Level >= 0; --Level) {
+        if (Scope[Level].SubFunctions.find(Name) !=Scope[Level].SubFunctions.end()) {
+            return Scope[Level].SubFunctions[Name].ParameterPoolFilled;
+        }
+    }
+}
 
 
+// UsingSubFunction() does a thourough check to see what other functions the 
+// specified function uses. Allows KoolB to cull out unused functions to reduce
+// the size of the program
+void Database::UsingSubFunction(std::string Name) {
+    if (InsideSubFunction == true) {
+        for (int Level = ScopeLevel; Level >= 0; --Level) {
+            if (Scope[Level].SubFunctions.find(InsideSubFunctionName) !=
+                    Scope[Level].SubFunctions.end()) {
+                for (int NextLevel = ScopeLevel; NextLevel >= 0; --NextLevel) {
+                    if (Scope[NextLevel].SubFunctions.find(Name) !=
+                            Scope[NextLevel].SubFunctions.end()) {
+                        Scope[Level].SubFunctions[InsideSubFunctionName].
+                        UsesSubFunctions[Name] = Scope[NextLevel].SubFunctions[Name];
+                    }
+                }                
+            }
+        }
+    }
+    else {    
+        for (int Level = ScopeLevel; Level >= 0; --Level) {
+            if (Scope[Level].SubFunctions.find(Name) !=
+                    Scope[Level].SubFunctions.end()) {
+                map <std::string, SubFunctionInfo>::iterator UseSubFunction;
+                Scope[Level].SubFunctions[Name].Used = true;
+                UseSubFunction = Scope[Level].SubFunctions[Name].UsesSubFunctions.begin();
+                while (UseSubFunction != Scope[Level].SubFunctions[Name].UsesSubFunctions.end()) {
+                    if (UseSubFunction->second.Used == false) {
+                        UsingSubFunction(UseSubFunction->first);
+                    }
+                    ++UseSubFunction;
+                }
+                UsedSubFunctions += "%define " + StripJunkOff(Name) + "_Used\r\n";
+                return ;
+            }
+        }
+    }
+    return ;
+}
 
 
+// GetUsedSubFunctions() returns the code snippet containing used functions
+std::string Database::GetUsedSubFunctions() {
+    return UsedSubFunctions;
+}
 
 
+// IsFunctionImported() checks to see if a function is external
+bool Database::IsFunctionImported(std::string Name) {
+    if (find(ImportedFunctions.begin(), ImportedFunctions.end(), Name) == 
+            ImportedFunctions.end()) {
+        ImportedFunctions.push_back(Name);
+        return false;
+    }
+    return true;
+}
 
 
+// AddDefine() adds a define to the database
+void Database::AddDefine(std::string Define) {
+    if (find(Defined.begin(), Defined.end(), Define) == Defined.end()) {
+        Defined.push_back(Define);
+    }
+}
 
 
+// IsDefined() checks to see if a word is defined
+bool Database::IsDefined(std::string Define) {
+    return find(Defined.begin(), Defined.end(), Define) != Defined.end()
+           ? true
+           : false;
+}
 
 
+// EnterDirective() adds a new level of directives (like nested $IfDefs)
+void Database::EnterDirective() {
+    ++DirectiveLevel;
+}
 
 
+// CanExitDirective() can we exit directives or is their one still pending
+bool Database::CanExitDirective() {
+    return DirectiveLevel > 0
+           ? true
+           : false;
+}
 
 
+// ExitDirective() exits a directive level
+void Database::ExitDirective() {
+    --DirectiveLevel;
+}
+
+
+// GetDirectiveLevel() checks to see on what level of directive we are in
+int Database::GetDirectiveLevel() {
+    return DirectiveLevel;
+}
+
+
+// SetDirectiveLevel() very useful for setting directive levels when moving between 
+// files
+void Database::SetDirectiveLevel(int Level) {
+    DirectiveLevel = Level;
+    return ;
+}
+
+
+// ListFunctions() lists all the user-defined functions in the file so they can
+// be exported from a DLL
+std::string Database::ListFunctions() {
+    std::string Functions = "Exit";
+    map<std::string, SubFunctionInfo>::const_iterator Item;
+    Item = Scope[ScopeLevel].SubFunctions.begin();
+    while(Item != Scope[ScopeLevel].SubFunctions.end()) {
+        if (Item->second.External == false) {
+            Functions += "," + Item->second.Name;
+        }
+        ++Item;
+    }
+    return Functions;
+}
 
 
 #endif // DATABASE_HPP
