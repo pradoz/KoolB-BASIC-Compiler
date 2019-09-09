@@ -89,7 +89,7 @@ std::string StripOffExtension(std::string FileName) {
 
 // FileExits() returns true if the file exists and can be opened
 bool FileExists(std::string FileName) {
-    ifstream File(FileName.c_str(), ios::in);
+    ifstream File(FileName.c_str(), std::ios::in);
     if (!File.is_open()) {
          return false;
     }
