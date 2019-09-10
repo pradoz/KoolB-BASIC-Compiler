@@ -47,9 +47,9 @@ int Pause = 0
 
 
 int main(int argc, char* argv[]) {
-    #ifdef Windows
+  #ifdef Windows
     printf("\n   Windows BASIC compiler v1.0 \n\r\n");
-    #endif
+  #endif
     Start();
     Compile(argc, argv);
     Stop();

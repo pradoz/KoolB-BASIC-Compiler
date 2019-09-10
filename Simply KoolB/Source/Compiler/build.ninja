@@ -1,0 +1,7 @@
+cflags = -g
+
+rule cc
+  command = g++ $cflags -c $in -o $out -I"C:\Users\z p\Desktop\prog\BASIC_Compiler\Simply KoolB\Source\Compiler\"
+
+build main.o: cc main.cpp 
+build Database.o: cc Database.hpp

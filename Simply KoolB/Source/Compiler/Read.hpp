@@ -137,20 +137,32 @@ void Reading::GetNextWord() {
     if (SkipWhiteSpace() == false) {
         return ;
     }
+
+    // Check for end of file again now that we skipped white space
+    if (!Book[BookMark]) {
+        // No type can exist past the end of the file
+        TypeOfWord = None;
+        return ;
+    }
+
     if (isalpha(Book[BookMark])) {
         GetIdentifier();
+        CheckWordLength();
         return ;
     }
     if (isdigit(Book[BookMark]) or Book[BookMark] == '.') {
         GetNumber();
+        CheckWordLength();
         return ;
     }
     if (Book[BookMark] == '\"') {
         GetString();
+        CheckWordLength();
         return ;
     }
     if (ispunct(Book[BookMark])) {
         GetSymbol(); 
+        CheckWordLength();
         return ;
     }
     TypeOfWord = None;
@@ -162,13 +174,19 @@ void Reading::GetNextWord() {
 // because it skipped all exisitng white space. 
 bool Reading::SkipWhiteSpace() {
     CurrentWord = "";
+
+    // Skip over comments and whitespace
     while (isspace(Book[BookMark]) or Book[BookMark] == '\'') {
-        if (Book[BookMark] == '\'') {
+
+        // If we find a comment, move to the end of the line
+        if (Book[BookMark] == '\'') { 
             ++BookMark;
             while (Book[BookMark] != '\n' and BookMark < BookLength) {
                 ++BookMark;
             }
         }
+
+        // If we hit an end of line character, return false.
         if (Book[BookMark] == '\n') {
             CurrentWord = Book[BookMark];
             TypeOfWord = EndOfLine;
@@ -187,11 +205,35 @@ bool Reading::SkipWhiteSpace() {
 // exit, it stops and assigns Identifier to TypeOfWord.
 void Reading::GetIdentifier() { 
     do {
-        CurrentWord += toupper(Book[BookMark]);
-        ++BookMark;
-    } while (isalpha(Book[BookMark]) or isdigit(Book[BookMark]));
+        if (!Book[BookMark]) {
+            break;
+        }
 
+        // Convert to uppercase if flag is set
+        if (!Uppercase) {
+            // Preserve case (this will usually be the case)
+            CurrentWord += Book[BookMark];
+        }
+        else {
+            CurrentWord += toupper(Book[BookMark]);
+        }
+        ++BookMark;
+    } while (isalpha(Book[BookMark]) or isdigit(Book[BookMark]) or Book[BookMark] == '_');
+
+    // If we find a BASIC Character, then add it to CurrentWord
+    if (Book[BookMark] == '&' or Book[BookMark] == '#' or Book[BookMark] == '$') {
+        CurrentWord += Book[BookMark];
+        ++BookMark;
+    }
+    
     TypeOfWord = Identifier;
+
+    // Check for CONSTness
+    if (IsConstData(CurrentWord)){
+        TypeOfWord = Const[CurrentWord].Type;
+        CurrentWord = Const[CurrentWord].Value; 
+    }
+    return ;
 }
 
 
@@ -203,11 +245,11 @@ void Reading::GetNumber() {
         if (Book[BookMark] == '.') {
 
             // Each number can contain at most one decimal point
-            if (ReachedDot == true) {
+            if (ReachedDot) {
                 std::cout << "SyntaxError on line: " << CurrentLine << std::endl;
                 std::cout << "ERR: Found two consecutive decimal points."
                           << std::endl;
-                exit(0); // Exit sucessfully
+                exit(1); // Exit
             }
             ReachedDot = true;
         }
@@ -216,12 +258,13 @@ void Reading::GetNumber() {
     } while (isdigit(Book[BookMark]) or Book[BookMark] == '.');
 
     // If both are true, we have at least one decimal point
-    if (CurrentWord.length() == 1 and ReachedDot == true) {
+    if (CurrentWord.length() == 1 and ReachedDot) {
         TypeOfWord = Symbol;
     }
     else {
         TypeOfWord = Number;
     }
+    return ;
 } 
 
 
@@ -237,12 +280,13 @@ void Reading::GetString() {
             std::cout << "SyntaxError on line: " << CurrentLine << ", at "<< CurrentWord << std::endl;
 
             std::cout << "ERR: Closing quotation mark not found on string." << std::endl;
-            exit(0);
+            exit(1);
         }
     }
     ++BookMark;
     TypeOfWord = String;
-} 
+    return ;
+}
 
 
 // GetSymbol()
@@ -250,10 +294,10 @@ void Reading::GetString() {
 // 1. '_' (underscore) will tell the compiler to continue on the next line
 // 2. ':' (colon) will tell the compiler to split the statement into two lines
 void Reading::GetSymbol() {
-    // Case 1: underscore
+    // Case 1: underscore, which means continue the word to the next line.
     if (Book[BookMark] == '_') {
         ++BookMark;
-        if (SkipWhiteSpace() == true) {
+        if (SkipWhiteSpace()) {
             std::cout << "Error on line: " << CurrentLine << std::endl;
             std::cout << "ERR: Newline not found after \'_\'" << std::endl;
             exit(1);
@@ -262,7 +306,7 @@ void Reading::GetSymbol() {
         return ;
     }
 
-    // Case 2: colon
+    // Case 2: colon, which is an end of line marker.
     if (Book[BookMark] == ':') {
         CurrentWord = '\n';
         ++BookMark;
@@ -271,7 +315,23 @@ void Reading::GetSymbol() {
     }
     CurrentWord = Book[BookMark];
     ++BookMark;
+
+    // We need at least two words to process these operations
+    if (CurrentWord == '<') {
+        if (Book[BookMark] == '=' or Book[BookMark] == '>') {
+            CurrentWord += Book[BookMark];
+            ++BookMark;
+        }
+    }
+    if (CurrentWord == '>') {
+        if (Book[BookMark] == '=') {
+            CurrentWord += Book[BookMark];
+            ++BookMark;
+        }
+    }
+
     TypeOfWord = Symbol;
+    return ;
 }
 
 
@@ -280,21 +340,86 @@ void Reading::GetSymbol() {
 void Reading::CheckWordLength() {
     if (CurrentWord.length() > 128 and TypeOfWord != String) {
         std::cout << "Error on line: " << CurrentLine << std::endl;
-        std::cout << "ERR: A word exceeds the 128 character limit" << std::endl;
+        std::cout << "ERR: A word exceeded the 128 character limit" << std::endl;
         exit(1);
     }
     return ;
 }
 
+
+// Word() returns the CurrentWord
 std::string Reading::Word() {
-    CheckWordLength();
     return CurrentWord;
 }
 
+
+// WordType() returns the Type of the CurrentWord 
 int Reading::WordType() {
     return TypeOfWord;
 }
 
+
+// GetBookMark() returns the current position in the file
+long Reading::GetBookMark() {
+    return BookMark;
+}
+
+
+// GetCurrentLine() returns the current line
+long Reading::GetCurrentLine() {
+    return CurrentLine;
+}
+
+
+// GetBookName() returns the name of the source file being compiled
+std::string Reading::GetBookName() {
+    return BookName;
+}
+
+
+// GetBook() returns contents of the entire source file
+std::string Reading::GetBook() {
+    return Book;
+}
+
+
+// SetUppercase() will toggle uppercase formatting on or off
+void Reading::SetUppercase(bool isUpperCase) {
+    Uppercase = isUpperCase;
+    return ;
+}
+
+
+// GetWholeLine() gets a the current line for error reporting
+std::string Reading::GetWholeLine() {
+    std::string Line = "";
+    while (Book[BookMark]) {
+        if (Book[BookMark] == '\n') {
+            BookMark++;
+            break;
+        }
+        Line += Book[BookMark];
+        ++BookMark;
+    }
+    return Line;
+}
+
+
+// AddConstData() adds a constant as defined by $Const
+void Reading::AddConstData(std::string Name, std::string Value, int Type) {
+    Const[Name].Value = Value;
+    Const[Name].Type  = Type;
+    return ;
+}
+
+
+// IsConstData() checks to see if a word is defined as a constant
+bool Reading::IsConstData(std::string Name) {
+  if (Const.find(Name) != Const.end()){
+    return true;
+  }
+  return false;
+}
 
 
 #endif // READ_HPP

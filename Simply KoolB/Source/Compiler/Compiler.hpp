@@ -22,7 +22,13 @@ public:
     void DIMCreateArray(std::string Name);
     void Assignment();
 
-    // TODO: (smooth) Operators
+    // Expressions
+    int Expression(int Type, std::string ExtraInfo = "");
+
+    // Binary Operators
+    void AddSubtract();
+    void MultiplyDivideMod();
+    void Exp(); // Exponents
 
 
 private:
@@ -625,6 +631,508 @@ void Compiler::Assignment() {
     }
     return ;
 }
+
+
+// Expression() parses expressions then passes information to a corresponding
+// function.
+// Example:
+//   A# = 3.14 * (4 + MyNum#^2)
+//        ^^^^^^^^^^^^^^^^^^^^^   Numeric expression
+//   B$ = "Hello " + Name
+//        ^^^^^^^^^^^^^^^         String expression
+//   Array1 = Array2
+//            ^^^^^^              Copy arrays/User-Defined Types
+//   Print A# + 3 * MyNum#
+//         ^^^^^^^^^^^^^^^        Undefined expression
+// Note: numeric expressions are calculated as doubles, no matter what. No integer
+// arithmetic is performed, even on integers.
+int Compiler::Expression(int Type, std::string ExtraInfo) {
+    // Numeric expression
+    if (Type == Data.Number) {
+        // Get the first number
+        Core(Data.Number);
+
+        // Start at the lowest operator precedence
+        AddSubtract();
+        return Type;
+    }
+    // String expression
+    if (Type == Data.String) {
+        // Get the first string
+        Core(Data.String);
+
+        // Concatenate (add) strings
+        StringAdd();
+        return Type;
+    }
+
+    // Copy arrays
+    if (Type == Data.Array) {
+        AssignArray(ExtraInfo);
+        return Type;
+    }
+    // Copy UDT's
+    if (Type == Data.UDT) {
+        AssignUDT(ExtraInfo);
+        return Type;
+    }
+
+    // If we have an unknown expression, we need to search for clues.
+    if (Type == Data.Unknown) {
+        Type = Core(Data.Unknown);
+        // Attempt to parse a numeric expression
+        if (Type == Data.Number) {
+            AddSubtract();
+            return Data.Number;
+        }
+        // Attempt to parse a string expression
+        if (Type == Data.String) {
+            StringAdd();
+            return Data.String;
+        }
+    }
+    // Unable to parse expression 
+    Error.UnknownExpressionType(Read);
+    return -1;
+}
+
+
+// AddSubtract() handles addition and subraction of numeric types.
+// Examples:
+//   A# = 2.14 + 1
+//   A# = 5.14 - 2
+void Compiler::AddSubtract() {
+    // Store the operator
+    std::string Operator;
+    Read.GetNextWord();
+
+    // Handle higher precedence, if needed
+    MultiplyDivideMod();
+
+    // After completing higher precedence operations, check for
+    // addition/subraction.
+    while (Read.Word() == "+" or Read.Word() == "-") {
+        Operator = Read.Word(); // Save the current word
+        Core(Data.Number); // Get the second expression
+        Read.GetNextWord(); // Get the next word
+        MultiplyDivideMod(); // Handle higher precedence, if needed
+
+        // Perform the operation
+        if (Operator == "+") {
+            Asm.CalculateAddition();
+        }
+        if (Operator == "-") {
+            Asm.CalculateSubtract();
+        }
+    }
+    return ;
+}
+
+
+// MultiplyDivideMod - handles multiplication, division (floating point), and
+// modulus operations on numeric types.
+// Examples:
+//   A# = 2 * 2
+//   A# = 4 / 2
+//   A# = 6 MOD 4 --> 2
+void Compiler::MultiplyDivideMod() {
+    // Store operator, because we might have to do higher operations first
+    std::string Operator;
+
+    // Handle higher precedence, if needed (exponents)
+    Exp();
+
+    // After completing higher precedence operations, check for, check for
+    // *, /, and MOD operators.
+    while (Read.Word() == "*" or Read.Word() == "/" or Read.Word() == "MOD") {
+        Operator = Read.Word(); // Save the current word
+        Core(Data.Number); // Get the second expression
+        Read.GetNextWord(); // Get the second word
+        Exp(); // Handle higher precedence, if needed (exponents)
+
+        // Perform the operation
+        if (Operator == "*") {
+            Asm.CalculateMultiply();
+        }
+        if (Operator == "/") {
+            Asm.CalculateDivide();
+        }
+        if (Operator == "MOD") {
+            Asm.CalculateMOD();
+        }
+    }
+    return ;
+}
+
+
+// Exp() deals with exponents - it is the hightest arithmetic operation
+// Example:
+// A# = 2 ^ 3
+void Compiler::Exp() {
+    // Currently the highest precedence operator, so execute it if we find it.
+    while (Read.Word() == "^") {
+        // Get the second expression
+        Core(Data.Number);
+
+        // Evaluate the exponent expression
+        Asm.CalculateExp();
+
+        // Get the next word
+        Read.GetNextWord();
+    }
+    return ;
+}
+
+
+// Core() retrieves a single component of an expression (string, array or array
+// item, UDT, UDT member, or unknown type.
+// Examples:
+//   A# = 2 + 2
+//        ^---^---Gets numbers
+//   B$ = "ABC" + "DEF"
+//        ^^^^^---^^^^^---Gets std::strings
+//   A# = (3 + 4)/Number#
+//        ^^---^^-^^^^^^^---Gets numbers and parenthesis
+int Compiler::Core(int Type, bool GetNextWord) {
+    // Initially, assume the value to be nonnegative
+    bool isNegative = false;
+
+    // Allow for boolean expressions
+    if (GetNextWord) {
+        Read.GetNextWord();
+    }
+
+    // Check to see if we have a negative number
+    if (Read.Word() == "-" and Read.WordType() != Read.String) {
+        isNegative = true;
+        Read.GetNextWord();
+    }
+
+    // Parenthesis expression
+    if (Read.Word() == "(") {
+        Type = Expression(Type);
+        // Make sure we can handle things like: A# = 2 * -(1+1)
+        if (Type == Data.Number and isNegative) {
+            Asm.Negate();
+        }
+
+        // If there is no ending parenthesis, then this statement is invalid.
+        if (Read.Word() != ")") {
+            Error.UnmatchedParenthesis(Read);
+        }
+        return Type;
+    }
+
+    // If we have no way of knowing the expression's type, (ex: Print "Hello")
+    if (Type == Data.Unknown) {
+        // Determine the type based on the beginning of the expression
+        if (Read.WordType() == Read.String) {
+            Type = Data.String;
+        }
+        if (Read.WordType() == Read.Number) {
+            Type = Data.Number;
+        }
+
+        // If we have an identifier (like Print A$), then we need to check the
+        // variable's type before proceeding.
+        if (Read.WordType() == Read.Identifier) {
+            // Case where the type is a string
+            if (Data.GetDataType(Read.Word()) == Data.String) {
+                Type = Data.String;
+            }
+
+            // Case where the type is a number
+            if (Data.GetDataType(Read.Word()) == Data.Number) {
+                Type = Data.Number;
+                if (isNegative) {
+                    Asm.Negate();
+                }
+            }
+
+            // Case where the type is a array
+            if (Data.GetDataType(Read.Word()) == Data.Array) {
+                Type = Data.GetArrayData(Read.Word()).Type;
+                LoadArray(Read.Word(), Data.Unknown);
+                if (Type == Data.Double or Type == Data.Integer) {
+                    Type = Data.Number;
+                }
+                if (isNegative) {
+                    Asm.Negate();
+                }
+                return Type;
+            }
+
+            // Case where the type is a user-defined type
+            if (Data.GetDataType(Read.Word()) == Data.UDT) {
+                Type = LoadUDT(Read.Word(), Data.Unknown);
+                if (Type == Data.Double or Type == Data.Integer) {
+                    Type = Data.Number;
+                }
+                if (isNegative) {
+                    Asm.Negate();
+                }
+                return Type;
+            }
+
+            // If the expression is a function, then call it and check its
+            // return value to determine its type.
+            if (Data.GetDataType(Read.Word()) == Data.SubFunction) {
+                std::string ReturnValueType = Data.GetSubFunctionInfo(Read.Word()).ReturnValue.Type;
+                if (ReturnValueType == "INTEGER" or ReturnValueType == "DOUBLE") {
+                    Type = Data.Number;
+                }
+                if (ReturnValueType == "STRING") {
+                    Type = Data.String;
+                }
+                CallSubFunction(Read.Word(), true);
+                return Type;
+            }
+        }
+        // Check built-in data types
+        if (Read.Word() == "CODEPTR" or Read.Word() == "CALLBACK" or
+            Read.Word() == "SIZEOF" or Read.Word() == "ADDRESSOF") {
+            Type = Data.Number;
+        }
+    }
+
+    // Case for string expressions
+    if (Type == Data.String) {
+        // If the string is constant, then return it.
+        if (Read.WordType() == Read.String) {
+            Asm.LoadString(Read.Word());
+            return Data.String;
+        }
+
+        // If we have a valid identifier, then return the string.
+        if (Read.WordType() == Read.Identifier) {
+            if (!Data.IsAlreadyReserved(Read.Word())) {
+                Error.UndeclaredVariable(Read);
+            }
+            if (Data.GetDataType(Read.Word()) == Data.String) {
+                Asm.LoadString(Read.Word());
+                return Data.String;
+            }
+            if (Data.GetDataType(Read.Word()) == Data.UDT) {
+                LoadUDT(Read.Word(), Data.String);
+                return Data.String;
+            }
+            if (Data.GetDataType(Read.Word()) == Data.Array) {
+                LoadArray(Read.Word(), Data.String);
+                return Data.String;
+            }
+        }
+
+        // If we have a function, then call it.
+        if (Data.GetDataType(Read.Word()) == Data.SubFunction) {
+            std::string ReturnValueType =
+                Data.GetSubFunctionInfo(Read.Word()).ReturnValue.Type;
+            if (ReturnValueType != "STRING") {
+                Error.ExpectedStringData(Read);
+            }
+            Type = Data.String;
+            CallSubFunction(Read.Word(), true);
+            return Type;
+        }
+        // We expected a string, but didn't find one.
+        Error.ExpectedStringData(Read);
+    }
+
+    // Case for number expressions
+    if (Type == Data.Number) {
+        // If we have a plain number, then return it.
+        if (Read.WordType() == Read.Number) {
+            Asm.LoadNumber(Read.Word());
+            if (isNegative) {
+                Asm.Negate();
+            }
+            return Data.Number;
+        }
+        // If we have a valid identifier, assign the number to the variable.
+        if (Read.WordType() == Read.Identifier) {
+            if (!Data.IsAlreadyReserved(Read.Word())) {
+                Error.UndeclaredVariable(Read);
+            }
+            if (Data.GetDataType(Read.Word()) == Data.Number) {
+                Asm.LoadNumber(Read.Word());
+                if (isNegative) {
+                    Asm.Negate();
+                }
+                return Data.Number;
+            }
+            if (Data.GetDataType(Read.Word()) == Data.UDT) {
+                LoadUDT(Read.Word(), Data.Number);
+                if (isNegative) {
+                    Asm.Negate();
+                }
+                return Data.Number;
+            }
+            if (Data.GetDataType(Read.Word()) == Data.Array) {
+                LoadArray(Read.Word(), Data.Number);
+                if (isNegative) {
+                    Asm.Negate();
+                }
+                return Data.Number;
+            }
+            // SizeOf() built-in function - gets the amount of memory to store
+            // a variable.
+            if (Read.Word() == "SIZEOF") {
+                int DataType = 0;
+                Read.GetNextWord();
+                // SizeOf() is a function, check for parenthesis
+                if (Read.Word() != "(") {
+                    Error.ExpectedParameters(Read);
+                }
+                Read.GetNextWord();
+
+                // Unable to get the size of if it is not a variable
+                if (Data.IsAlreadyReserved(Read.Word()) != true or
+                    Data.IsKeyword(Read.Word())) {
+                    Error.ExpectedVariable(Read);
+                }
+                DataType = Data.GetDataType(Read.Word());
+
+                // Check to see if we have a valid data type
+                if (DataType == Data.Number or DataType == Data.String or
+                    DataType == Data.UDT or DataType == Data.Type) {
+                    if (DataType == Data.Number) {
+                        if (Data.GetSimpleData(Read.Word()).Type == Data.Integer) {
+                            // Integers are 4 bytes
+                            Asm.PushNumber(4);
+                        }
+                        else {
+                            // Doubles are 8 bytes
+                            Asm.PushNumber(8);
+                        }
+                    }
+                    if (DataType == Data.String) {
+                        // Strings are four bytes. Call Len to get the length 
+                        Asm.PushNumber(4);
+                    }
+
+                    // UDT's can vary in size
+                    if (DataType == Data.UDT) {
+                        int Size = Data.GetUDTData(Read.Word()).Type.Size;
+                        Asm.PushNumber(Size);
+                    }
+                    // TYPE's can vary in size
+                    if (DataType == Data.Type) {
+                        int Size = Data.GetTypeData(Read.Word()).Size;
+                        Asm.PushNumber(Size);
+                    }
+                }
+                else {
+                    // Bad type was passed, report an error.
+                    Error.BadType(Read);
+                }
+                Read.GetNextWord();
+
+                // Check for closing parenthesis
+                if (Read.Word() != ")") {
+                    Error.ExpectedEndingParenthesis(Read);
+                }
+                return Data.Number;
+            }
+
+            // AddressOf() returns the address where the variable is stored
+            // in memory.
+            if (Read.Word() == "ADDRESSOF") {
+                int DataType = 0;
+                Read.GetNextWord();
+                // It is a function, check for parenthesis
+                if (Read.Word() != "(") {
+                    Error.ExpectedParameters(Read);
+                }
+                Read.GetNextWord();
+
+                // Check the address of a variable
+                if (Data.IsAlreadyReserved(Read.Word()) != true or Data.IsKeyword(Read.Word())) {
+                    Error.ExpectedVariable(Read);
+                }
+                DataType = Data.GetDataType(Read.Word());
+
+                // Check to ensure it is a valid type
+                if (DataType == Data.Number or DataType == Data.String or DataType == Data.UDT) {
+                    Asm.PushAddress(Read.Word(), DataType);
+                }
+                else if (DataType == Data.SubFunction) {
+                    // Unable to obtain the address of a non-function variable
+                    if (Data.GetDataType(Read.Word()) != Data.SubFunction) {
+                        Error.ExpectedSubFunction(Read);
+                    }
+                    // If optimization is enabled, mark this function as used.
+                    if (Optimize) {
+                        Data.UsingSubFunction(Read.Word());
+                    }
+                    Asm.Callback(Read.Word());
+                }
+                else {
+                    Error.BadType(Read);
+                }
+                Read.GetNextWord();
+
+                // Check for closing parenthesis
+                if (Read.Word() != ")") {
+                    Error.ExpectedEndingParenthesis(Read);
+                }
+                return Data.Number;
+            }
+
+            // Built-in functions to return the address of a function
+            if (Read.Word() == "CALLBACK" or Read.Word() == "CODEPTR") {
+                Read.GetNextWord();
+
+                // CallBack()/CodePtr() is a function, check for parenthesis
+                if (Read.Word() != "(") {
+                    Error.ExpectedParameters(Read);
+                }
+                Read.GetNextWord();
+
+                // Unable to obtain the address of a non-function variable
+                if (Data.GetDataType(Read.Word()) != Data.SubFunction) {
+                    Error.ExpectedSubFunction(Read);
+                }
+
+                // If optimization is enabled, mark this function as used.
+                if (Optimize) {
+                    Data.UsingSubFunction(Read.Word());
+                }
+                Asm.Callback(Read.Word());
+                Read.GetNextWord();
+
+                // Check for closing parenthesis
+                if (Read.Word() != ")") {
+                    Error.ExpectedEndingParenthesis(Read);
+                }
+                return Data.Number;
+            }
+        }
+
+        // If we have a function, call the function and check its return value.
+        if (Data.GetDataType(Read.Word()) == Data.SubFunction) {
+            // Check the return value to see if it is a number
+            std::string ReturnValueType = Data.GetSubFunctionInfo(Read.Word()).ReturnValue.Type;
+            if (ReturnValueType != "INTEGER" and ReturnValueType != "DOUBLE") {
+                Error.ExpectedNumberData(Read);
+            }
+            Type = Data.Number;
+            CallSubFunction(Read.Word(), true);
+            return Type;
+        }
+        // Error, this isn't a numeric expression
+        Error.ExpectedNumberData(Read);
+    }
+    // Something bad happened, most likely an invalid expression
+    Error.UnknownExpression(Read);
+    return -1;
+}
+
+
+
+
+
+
+
+
 
 
 

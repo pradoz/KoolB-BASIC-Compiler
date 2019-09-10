@@ -1,10 +1,14 @@
 #ifndef DATABASE_HPP
 #define DATABASE_HPP
 
+#include "Misc.hpp"
+#include "Read.hpp"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <map>
+
 
 // Stores literal data types (int, str, double)
 struct SimpleDataInfo {
@@ -58,7 +62,7 @@ struct SubFunctionInfo {
         std::string Name;
         std::string Type;
         int ParamCount;
-        map<int, Parameter> Parameters;
+        std::map<int, Parameter> Parameters;
         Parameter ReturnValue;
         int SizeOfParameters;
         int SizeOfLocalVariables;
@@ -178,6 +182,7 @@ public:
         SubFunctionInfo& GetSubFunctionInfo(std::string Name);
         std::string GetUsedSubFunctions();
 
+        // Source code to assembly translation 
         std::string StripJunkOff(std::string Name);
         std::string Asm(std::string Name);
         void SetAsmName(std::string Name, std::string AsmName);
@@ -214,7 +219,7 @@ private:
         // True if we are currently inside a function
         bool InsideSubFunction;
         // Stores the name of the function we are in
-        std::std::string InsideSubFunctionName;
+        std::string InsideSubFunctionName;
         // Stores the name of the last function we were in
         std::string LastSubFunction;
         // Stores a code snippet of executed functions
@@ -270,7 +275,7 @@ bool Database::IsAlreadyReserved(std::string Name) {
         if (std::find(KeyWord.begin(), KeyWord.end(), Name) != KeyWord.end()) {
                 return true;
         }
-        if (Read.IsConstData(Name) == true) {
+        if (Read.IsConstData(Name)) {
                 return true;
         }
 
@@ -497,7 +502,7 @@ void Database::AddSubFunction(std::string Type, std::string Name, bool External)
     // The current scope will have access to a scope nested inside of it
     --ScopeLevel;
     LastSubFunction = Name;
-    if (Mangle == true) {
+    if (Mangle) {
         Scope[ScopeLevel].SubFunctions[Name].Name = "_" + StripJunkOff(Name);
     }
     else {
@@ -532,7 +537,7 @@ void Database::AddParameter(std::string Name, std::string ParameterName,
     Scope[ScopeLevel].SubFunctions[Name].Parameters[ParamCount].Name = ParameterName;
     Scope[ScopeLevel].SubFunctions[Name].Parameters[ParamCount].Type = Type;
     Scope[ScopeLevel].SubFunctions[Name].Parameters[ParamCount].How = How;
-    if (Mangle == true) {
+    if (Mangle) {
         Scope[ScopeLevel].SubFunctions[Name].Parameters[ParamCount].AsmName =
                                GetScopeID() + StripJunkOff(Name) + "__" + Type;
     }
@@ -605,9 +610,9 @@ void Database::ExitScope() {
 // GetScopeID() get the current scope's scope ID
 std::string Database::GetScopeID() {
     // std::string Result;
-    return Mangle == true
+    return Mangle
            ? "Scope" + ToStr(UniqueScopeID) + "__"
-           : Result = "";
+           : "";
 }
 
 
@@ -654,7 +659,7 @@ bool Database::IsInsideSubFunction() {
 // AddLocalVariable() adds a local variable to a function
 std::string Database::AddLocalVariable(int Type) {
     --ScopeLevel;
-    if (InsideSubFunction == true) {
+    if (InsideSubFunction) {
         if (Scope[ScopeLevel].SubFunctions.find(LastSubFunction) != 
                 Scope[ScopeLevel].SubFunctions.end()) {
             if (Type == Double) {
@@ -674,7 +679,7 @@ std::string Database::AddLocalVariable(int Type) {
 
 
 // AddExternalSubFunctionData() adds information relating to an external function
-(WinAPI) to the external function.
+// (WinAPI) to the external function.
 void Database::AddExternalSubFunctionData(std::string Name, std::string Library, 
                                                                                     std::string Alias, std::string CallConv) {
     --ScopeLevel;
@@ -712,7 +717,7 @@ int Database::GetParameterPoolSizeFilled(std::string Name) {
 // specified function uses. Allows KoolB to cull out unused functions to reduce
 // the size of the program
 void Database::UsingSubFunction(std::string Name) {
-    if (InsideSubFunction == true) {
+    if (InsideSubFunction) {
         for (int Level = ScopeLevel; Level >= 0; --Level) {
             if (Scope[Level].SubFunctions.find(InsideSubFunctionName) !=
                     Scope[Level].SubFunctions.end()) {
@@ -730,7 +735,7 @@ void Database::UsingSubFunction(std::string Name) {
         for (int Level = ScopeLevel; Level >= 0; --Level) {
             if (Scope[Level].SubFunctions.find(Name) !=
                     Scope[Level].SubFunctions.end()) {
-                map <std::string, SubFunctionInfo>::iterator UseSubFunction;
+                std::map<std::string, SubFunctionInfo>::iterator UseSubFunction;
                 Scope[Level].SubFunctions[Name].Used = true;
                 UseSubFunction = Scope[Level].SubFunctions[Name].UsesSubFunctions.begin();
                 while (UseSubFunction != Scope[Level].SubFunctions[Name].UsesSubFunctions.end()) {
@@ -819,9 +824,9 @@ void Database::SetDirectiveLevel(int Level) {
 // be exported from a DLL
 std::string Database::ListFunctions() {
     std::string Functions = "Exit";
-    map<std::string, SubFunctionInfo>::const_iterator Item;
+    std::map<std::string, SubFunctionInfo>::const_iterator Item;
     Item = Scope[ScopeLevel].SubFunctions.begin();
-    while(Item != Scope[ScopeLevel].SubFunctions.end()) {
+    while (Item != Scope[ScopeLevel].SubFunctions.end()) {
         if (Item->second.External == false) {
             Functions += "," + Item->second.Name;
         }
