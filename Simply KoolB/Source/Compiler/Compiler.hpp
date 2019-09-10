@@ -10,6 +10,7 @@ public:
     void DIM();
     void NotDIM();
 
+    /* Initializations */
     // Variables
     void DIMCreate(std::string Name);
 
@@ -17,7 +18,7 @@ public:
     void TYPE();
     void TYPECreate(std::string TypeName, std::string Name);
 
-    // Arrays
+    // Array
     void GetArraySize();
     void DIMCreateArray(std::string Name);
     void Assignment();
@@ -25,11 +26,48 @@ public:
     // Expressions
     int Expression(int Type, std::string ExtraInfo = "");
 
-    // Binary Operators
+    /* Binary Operators */
     void AddSubtract();
     void MultiplyDivideMod();
     void Exp(); // Exponents
 
+    /* Core processing function */
+    int Core(int Type, bool GetNextWord = true);
+
+    /* Loading and Assigments */
+    void StringAdd();
+    // Array
+    void AssignArray(std::string Name);
+    void AssignArrayItem(std::string Name);
+    void LoadArray(std::string Array, int Type);
+    // UDT
+    void AssignUDT(std::string Name);
+    std::string AssignUDTMember(std::string Name);
+    int LoadUDT(std::string UDT, int Type);
+
+    /* Logical operators and comparison/relation statements  */
+    void Condition();
+    // Logical Operators
+    void Or();
+    void And();
+    void Not();
+    // Relations
+    int Relation(bool GetNextWord = true);
+    bool IsRelation(std::string Word);
+    // Comparison
+    void CompareNumbers(std::string Relation);
+    void CompareStrings(std::string Relation);
+    // Conditional
+    void If();
+
+    /* Loop */
+    // While loop
+    void While(std::string StartWhileLabel);
+
+
+    // TODO: Control statements in loops
+    // bool DealWithControlStatements(std::string LoopCommand = "");
+    // void While(std::string StartWhileLabel);
 
 private:
     // Read contains the BASIC source code to compile
@@ -1125,6 +1163,477 @@ int Compiler::Core(int Type, bool GetNextWord) {
     Error.UnknownExpression(Read);
     return -1;
 }
+
+
+// StringAdd() concatenates two strings together with a + or & operator
+// Examples:
+//   A$ = "Hello" + " how are " & "you!"
+void Compiler::StringAdd() {
+    Read.GetNextWord();
+    while (Read.Word() == "+" or Read.Word() == "&") {
+        // Get the second part of the expression
+        Core(Data.String);
+        Asm.AddStrings();
+        Read.GetNextWord();
+    }
+    return ;
+}
+
+
+// AssignArray() copies one array to another
+// Example:
+//   Array1 = Array2
+void Compiler::AssignArray(std::string Name) {
+    Read.GetNextWord();
+    // Can't assign a UDT to an array or anything!
+    if (Data.GetDataType(Read.Word()) != Data.Array) {
+        Error.ExpectedArray(Read);
+    }
+    // Make sure the arrays are of the same type
+    if (Data.GetArrayData(Read.Word()).Type != Data.GetArrayData(Name).Type) {
+        Error.TypesDoNotMatch(Read);
+    }
+    // Copy the array now
+    Asm.CopyArray(Read.Word());
+    return ;
+}
+
+
+// AssignArrayItem() loads the array item that we are assigning to the stack 
+// Example:
+//   Array(1+2*Num) = 2
+void Compiler::AssignArrayItem(std::string Name) {
+    // This operation is only valid for array data types
+    if (Data.GetDataType(Name) != Data.Array) {
+        Error.UnableToAccessItem(Read);
+    }
+
+    // Get the array item as an expression
+    Expression(Data.Number);
+
+    // Check for closing parenthesis
+    if (Read.Word() != ")") {
+        Error.ExpectedEndingParenthesis(Read);
+    }
+    return ;
+}
+
+
+// LoadArray() pushes an array item to the stack for computation
+// Example:
+//   A# = Numbers(1*Num)
+//               ^^^^^^^---Loads the array item
+void Compiler::LoadArray(std::string Array, int Type) {
+    Read.GetNextWord();
+    // Need array item, which is inside parenthesis
+    if (Read.Word() != "(") {
+        Error.ExpectedParenthesis(Read);
+    }
+
+    // Get the array item as an expression
+    Expression(Data.Number);
+
+    // Check for closing parenthesis
+    if (Read.Word() != ")") {
+        Error.ExpectedEndingParenthesis(Read);
+    }
+
+    // Load the array item into assembly
+    Asm.LoadArrayItem(Array, Data.GetArrayData(Array).Type);
+    return ;
+}
+
+
+// AssignUDT() copies one UDT to another
+// Example:
+//   UDT1 = UDT2
+void Compiler::AssignUDT(std::string Name) {
+    Read.GetNextWord();
+    // This operation is only valid for UDT
+    if (Data.IsType(Name)) {
+        if (Data.GetUDTData(Read.Word()).TypeName != Name) {
+            Error.TypesDoNotMatch(Read);
+        }
+
+        /// Copy the assigned UDT
+        Asm.CopyUDT(Read.Word());
+        Read.GetNextWord(); // Get the next word
+        return ;
+    }
+
+    // Check to see if the final assignment resulted in a UDT
+    if (Data.GetDataType(Read.Word()) != Data.UDT) {
+        Error.ExpectedUDT(Read);
+    }
+    if (Data.GetUDTData(Read.Word()).TypeName != Data.GetUDTData(Name).TypeName) {
+        Error.TypesDoNotMatch(Read);
+    }
+
+    // Copy the new UDT
+    Asm.CopyUDT(Read.Word());
+    return ;
+}
+
+
+// AssignUDTMember() assigns an expression to an UDT member
+// Example:
+//   MyUDT.Member = 2
+std::string Compiler::AssignUDTMember(std::string Name) {
+    std::string Member;
+    // We need a UDT parent in order to assign it members
+    if (Data.GetDataType(Name) != Data.UDT) {
+        Error.UnableToAccessMember(Read);
+    }
+
+    // Get the next word and assign it to become the UDT's member
+    Read.GetNextWord();
+    Member = Read.Word();
+
+    // If the member was not initialized in the UDT, then report an error
+    if (!Data.IsAlreadyReservedInType(Data.GetUDTData(Name).TypeName, Member)) {
+        Error.InvalidMember(Read);
+    }
+    return Member;
+}
+
+
+// LoadUDT() initialize a UDT member onto the stack
+// Example:
+//   A# = MyUDT.Number
+int Compiler::LoadUDT(std::string UDT, int Type) {
+    std::string Member;
+    Read.GetNextWord();
+
+    // Check for a dot identifier after the identifier
+    if (Read.Word() != '.') {
+        Error.ExpectedPeriod(Read);
+    }
+
+    Read.GetNextWord();
+    Member = Read.Word();
+
+    // Check if the member is already reserved in the UDT
+    if (!Data.IsAlreadyReservedInType(Data.GetUDTData(UDT).TypeName, Member)) {
+        Error.InvalidMember(Read);
+    }
+
+    // Set the type of the current type of the member
+    if (Type == Data.Unknown) {
+        Type = Data.GetUDTData(UDT).Type.Members[Member].Type;
+    }
+
+    // Load the member into assembly
+    Asm.LoadUDTMember(UDT, Data.GetUDTData(UDT).TypeName, Member, Type);
+    return Type;
+}
+
+
+// Condition() a very simple boolean expression parser. 
+// Precendence (Highest to lowest): Not -> And -> OR
+// Note: relations (=, <, >, <>, =>, and =<) have lower precedence than the
+// logical operators.
+// Example:
+//   If 1 = 1 Or Not 3 <> 2 Then
+void Compiler::Condition() {
+    // This will check AND and NOT first. This simulates precedence
+    Or();
+}
+
+// Or() returns 0 if both of the relationals are false, and -1 otherwise
+// Example:
+//   If 1=1 OR 2=2 Then
+void Compiler::Or() {
+    // Check for higher precedence operators before evaluating Or()
+    And();
+
+    // Evaluate the OR statement
+    while (Read.Word() == "OR") {
+        // Check for AND statment before evaluating another OR statment
+        And();
+        Asm.Or();
+    }
+    return ;
+}
+
+// And() returns 0 if either of the relational expressions is false, and -1
+// otherwise
+// Example:
+//   If 1=1 AND 2<>2 Then
+void Compiler::And() {
+    // Check for higher precedence operators before evaluating And()
+    Not();
+
+    // Then loop while we have AND expressions
+    while (Read.Word() == "AND") {
+        // Check for NOT statment before evaluating another AND statment
+        Not();
+        Asm.And();
+    }
+    return ;
+}
+
+// Not() Returns 0 if the relation is true, and -1 otherwise
+// Example:
+//   If NOT 1=1 Then
+void Compiler::Not() {
+    // Check if the next word is NOT
+    Read.GetNextWord();
+    if (Read.Word() == "NOT") {
+        // Call Relation() and then negate the results of that expression
+        Relation();
+        Asm.Not();
+    }
+    else {
+        // We have the first part of an expression. We need to pass false to
+        // Relation(), so that Core() will receive false as well, otherwise
+        // our program will not have the first part of the next expression.
+        // TODO: Implement something less hacky
+        Relation(false);
+    }
+    return ;
+}
+
+
+// IsRelation() returns true if the current word is a relational operator, and
+// false otherwise.
+bool Compiler::IsRelation(std::string Word) {
+    if (Word == "=" or Word == "<>" or Word == "<" or Word == ">" or
+        Word == ">=" or Word == "<=") {
+        return true;
+    }
+    return false;
+}
+
+
+// CompareNumbers() compares the results of two numeric expressions
+void Compiler::CompareNumbers(std::string Relation) {
+    // Evaluate what is necessary to make the comparison
+    Asm.CompareNumbers();
+
+    // Load the appropriate relational operator and its results
+    if (Relation == "=") {
+        Asm.LoadNumberRelation(Asm.Equal);
+    }
+    if (Relation == "<>") {
+        Asm.LoadNumberRelation(Asm.NotEqual);
+    }
+    if (Relation == ">") {
+        Asm.LoadNumberRelation(Asm.Greater);
+    }
+    if (Relation == "<") {
+        Asm.LoadNumberRelation(Asm.Less);
+    }
+    if (Relation == ">=") {
+        Asm.LoadNumberRelation(Asm.GreaterOrEqual);
+    }
+    if (Relation == "<=") {
+        Asm.LoadNumberRelation(Asm.LessOrEqual);
+    }
+    return ;
+}
+
+
+// CompareStrings() compares two strings on the stack 
+void Compiler::CompareStrings(std::string Relation) {
+    // Evaluate what is necessary to make the comparison
+    Asm.CompareStrings();
+
+    // Load true or false after evaluation the relational operator
+    if (Relation == "=") {
+        Asm.LoadStringRelation(Asm.Equal);
+    }
+    if (Relation == "<>") {
+        Asm.LoadStringRelation(Asm.NotEqual);
+    }
+    if (Relation == ">") {
+        Asm.LoadStringRelation(Asm.Greater);
+    }
+    if (Relation == "<") {
+        Asm.LoadStringRelation(Asm.Less);
+    }
+    if (Relation == ">=") {
+        Asm.LoadStringRelation(Asm.GreaterOrEqual);
+    }
+    if (Relation == "<=") {
+        Asm.LoadStringRelation(Asm.LessOrEqual);
+    }
+    return ;
+}
+
+
+// If() evaluates the expression inside of an if statement
+// <CodeBlock>
+// End If
+void Compiler::If() {
+    // Store the initial beginning and end points
+    std::string NextEnd = Asm.StartIf();
+    std::string DoneIf = Asm.GetLabel();
+
+    // Keep looping until we find a break condition
+    while (1) {
+        // Functions are invalid data types to evaluate inside an if statement
+        if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+            Error.SubFunctionMustBeGlobal(Read);
+        }
+        // If there is no valid statement, we need to explore
+        if (!Statement()) {
+            if (Read.Word() == "END") {
+                Read.GetNextWord();
+
+                // Invalid data types to evaluate inside an If statement
+                if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+                    Error.MustEndIfStatementFirst(Read);
+                }
+
+                // END IF is a break condition for the If statement
+                if (Read.Word() == "IF") {
+                    Read.GetNextWord();
+                    break;
+                }
+
+                // No matter what type of end we have, nothing else must be on the line
+                if (Read.WordType() != Read.EndOfLine && Read.WordType() != Read.None) {
+                    Error.EndOfLine(Read);
+                }
+
+                // A single "End" was found, exit the program
+                Asm.EndProgram();
+                Read.GetNextWord();
+                continue;
+            }
+
+            // If we have an ElseIf, we can handle that
+            if (Read.Word() == "ELSEIF") {
+                // Start a new section of the If code
+                Asm.StartNewIfSection(NextEnd, DoneIf);
+
+                // Get the condition
+                Condition();
+
+                // Make sure we have THEN followec by a new line
+                if (Read.Word() != "THEN") {
+                    Error.ExpectedThen(Read);
+                }
+                Read.GetNextWord();
+                if (Read.WordType() != Read.EndOfLine) {
+                    Error.EndOfLine(Read);
+                }
+
+                // Now, let's continue with the new part of the IF statement
+                NextEnd = Asm.ElseIf(NextEnd, DoneIf);
+                Read.GetNextWord();
+                continue;
+            }
+            // We can handle ELSE too!
+            if (Read.Word() == "ELSE") {
+                // Make sure we have a new line
+                Read.GetNextWord();
+                if (Read.WordType() != Read.EndOfLine) {
+                    Error.EndOfLine(Read);
+                }
+                // Prep for else statement, and then continue
+                NextEnd = Asm.Else(NextEnd, DoneIf);
+                Read.GetNextWord();
+                continue;
+            }
+            // We found an undeclared variable
+            if (Read.WordType() != Read.EndOfLine && Read.WordType() != Read.None) {
+                NotDIM();
+                Assignment();
+                continue;
+            }
+        }
+        // Check for an end of line
+        if (Read.WordType() != Read.EndOfLine) {
+            // If we encounter an end of the file before an End If, report an
+            // error
+            if (Read.WordType() == Read.None) {
+                Error.NoEndIf(Read);
+            }
+            Error.EndOfLine(Read);
+        }
+        Read.GetNextWord();
+    }
+
+    // End the If statement
+    Asm.EndIf(NextEnd, DoneIf);
+    return ;
+}
+
+
+// While() handles the while loop execution
+// Example:
+//   <Block>
+//   WEnd       <--- Ends the while statment
+void Compiler::While(std::string StartWhile) {
+    // Store EndWhile to pass to StopWhile after we finish looping
+    std::string EndWhile = Asm.StartWhile();
+
+    // Loop until we find a break condition (WEnd or error)
+    while (1) {
+        // Invalid types inside while statements
+        if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+            Error.SubFunctionMustBeGlobal(Read);
+        }
+
+        // Check for valid commands
+        if (DealWithControlStatements() or
+            Statement() or
+            Read.WordType() == Read.EndOfLine or
+            Read.WordType() == Read.None) {
+            
+            // Check for a new line after the command
+            if (Read.WordType() != Read.EndOfLine) {
+                // If the file ends before the word, we have an error
+                if (Read.WordType() == Read.None) {
+                    Error.NoEndIf(Read);
+                }
+                Error.EndOfLine(Read);
+            }
+            Read.GetNextWord();
+            continue;
+        }
+        // Break condition: Found a WEND
+        if (Read.Word() == "WEND") {
+            Read.GetNextWord();
+            break;
+        }
+        // Found an END, which is the end of a function, so it is invalid
+        if (Read.Word() == "END") {
+            Read.GetNextWord();
+            if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+                Error.MustEndWhileLoopFirst(Read);
+            }
+            Error.EndInWrongPlace(Read);
+        }
+        // Everything failed, use an undeclared variable
+        NotDIM();
+        Assignment();
+    }
+    // End the while statement
+    Asm.StopWhile(StartWhile, EndWhile);
+    return ;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
