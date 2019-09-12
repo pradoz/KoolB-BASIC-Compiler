@@ -64,10 +64,43 @@ public:
     // While loop
     void While(std::string StartWhileLabel);
 
+    bool DealWithControlStatements(std::string LoopCommand = "");
+    bool DealWithConsoleKeywords();
+    void AssignInput();
 
-    // TODO: Control statements in loops
-    // bool DealWithControlStatements(std::string LoopCommand = "");
-    // void While(std::string StartWhileLabel);
+    void GetParameters(std::string Name);
+    void PrepareParameters(std::string Name);
+    void UnprepareParameters(std::string Name);
+
+    void SubFunction(bool External = false);
+    void InsideSubFunction(std::string Name);
+    // TODO
+    void DeclareSubFunction();
+    void SubFunctionLibAliasCall(std::string Name);
+    void CallSubFunction(std::string Name, bool ReturnValue = false);
+
+    void PassParameters(std::string Name);
+    void ByRefExpression(int Type);
+
+    bool FirstDirectives(std::string Directive);
+
+    void ChooseAppType();
+
+    void OptimizeApp();
+
+    bool Directives(std::string Directive);
+    void IncludeFile();
+
+    void DropDownToAsm();
+    void CompressApp();
+
+    void IfDef();
+    void IfNDef();
+
+    void Const();
+
+    void MangleNames();
+    void PrepareProgram();
 
 private:
     // Read contains the BASIC source code to compile
@@ -183,7 +216,6 @@ bool Compiler::Statement() {
 
 
 // DIM - explicitly creating a variable
-
 /* Examples:
 1. Creating variable(s) A, B, and C.:
     DIM A As Integer, B As Double, C As String
@@ -1410,7 +1442,7 @@ void Compiler::CompareNumbers(std::string Relation) {
     // Evaluate what is necessary to make the comparison
     Asm.CompareNumbers();
 
-    // Load the appropriate relational operator and its results
+    // Load the appropriate relational operator and its result into assembly
     if (Relation == "=") {
         Asm.LoadNumberRelation(Asm.Equal);
     }
@@ -1435,7 +1467,7 @@ void Compiler::CompareNumbers(std::string Relation) {
 
 // CompareStrings() compares two strings on the stack 
 void Compiler::CompareStrings(std::string Relation) {
-    // Evaluate what is necessary to make the comparison
+    // Load CompareStrings() into assembly
     Asm.CompareStrings();
 
     // Load true or false after evaluation the relational operator
@@ -1465,7 +1497,7 @@ void Compiler::CompareStrings(std::string Relation) {
 // <CodeBlock>
 // End If
 void Compiler::If() {
-    // Store the initial beginning and end points
+    // Store the initial condition and how to verify it
     std::string NextEnd = Asm.StartIf();
     std::string DoneIf = Asm.GetLabel();
 
@@ -1492,7 +1524,7 @@ void Compiler::If() {
                 }
 
                 // No matter what type of end we have, nothing else must be on the line
-                if (Read.WordType() != Read.EndOfLine && Read.WordType() != Read.None) {
+                if (Read.WordType() != Read.EndOfLine and Read.WordType() != Read.None) {
                     Error.EndOfLine(Read);
                 }
 
@@ -1537,7 +1569,7 @@ void Compiler::If() {
                 continue;
             }
             // We found an undeclared variable
-            if (Read.WordType() != Read.EndOfLine && Read.WordType() != Read.None) {
+            if (Read.WordType() != Read.EndOfLine and Read.WordType() != Read.None) {
                 NotDIM();
                 Assignment();
                 continue;
@@ -1616,11 +1648,764 @@ void Compiler::While(std::string StartWhile) {
 }
 
 
+// DealWithControlStatements() returns true if the While or If statement was
+// completed succesfully.
+// Examples:
+//   If 1=1 Then
+//   ^^^^^^^^^^^---Makes sure the beginning of an if statement is valid
+//   While 1=1
+//   ^^^^^^^^^---Makes sure that the beginning of a while loop is valid
+bool Compiler::DealWithControlStatements(std::string LoopCommand) {
+    // Case where we have an If statement
+    if (Read.Word() == "IF") {
+        // Get the condition we are checking
+        Condition();
+
+        // Check for keyword: "THEN"
+        if (Read.Word() != "THEN") {
+            Error.ExpectedThen(Read);
+        }
+        Read.GetNextWord();
+
+        // If there is no end of line following "THEN", report an error
+        if (Read.WordType() != Read.EndOfLine) {
+            Error.EndOfLine(Read);
+        }
+        Read.GetNextWord();
+
+        // Go inside the IF statement
+        If();
+        // Return true, meaning we dealt with a control statement
+        return true;
+    }
+    // Case where we have an While statement
+    if (Read.Word() == "WHILE") {
+        // Set the stage for the while and get the fixed place to loop back to
+        std::string StartWhile = Asm.PrepareWhile();
+        // Then get the conditio (the conditon will be checked every time we loop)
+        Condition();
+        // Make sure we have a new line
+        if (Read.WordType() != Read.EndOfLine) {
+            Error.EndOfLine(Read);
+        }
+        Read.GetNextWord();
+        // Go to the inside of the start statement
+        While(StartWhile);
+        // Yep, we handled a control statement
+        return true;
+    }
+    // Nope, didn't find any control statements
+    return false;
+}
 
 
+// DealWithConsoleKeywords() has built-in console keywords:
+// Sleep - pause program for a number of seconds
+// Cls   - clear the screen
+// Print - print stuff to the screen
+// Input - get stuff input from the screen
+// Note: Unlike most functions, some keywords have no need for any parenthesis
+// after their identifier.
+bool Compiler::DealWithConsoleKeywords() {
+    // Sleep passes a Number expression in seconds to an assembly object
+    if (Read.Word() == "SLEEP") {
+        Expression(Data.Number);
+        Asm.ConsoleSleep();
+        return true;
+    }
+
+    // CLS is a single line statement, needs no parameters
+    if (Read.Word() == "CLS") {
+        Asm.ConsoleCls();
+        Read.GetNextWord();
+        return true;
+    }
+
+    // Print case
+    if (Read.Word() == "PRINT") {
+        // Print out expressions separated by a ';' or ',' if there is multiple
+        do {
+            // Need to resolve the data type before printing it
+            Asm.ConsolePrint(Expression(Data.Unknown));
+        } while (Read.Word() == ";" or Read.Word() == ",");
+
+        // Start a new line after printing out all valid expressions
+        Asm.ConsolePrintNewLine();
+        return true;
+    }
+
+    // Input case
+    if (Read.Word() == "INPUT") {
+        Read.GetNextWord();
+        // If the word after INPUT is a string, we have a prompt, as in:
+        // INPUT "Enter A Number: "; A#
+        // Where it prompts the user for a number and saves it in A$
+        if (Read.WordType() == Read.String) {
+            Asm.LoadString(Read.Word());
+            Asm.ConsolePrint(Data.String);
+            Read.GetNextWord();
+            // If we have a prompt for INPUT, we need at least one semi-colon
+            // or comma to separate the prompt string from the variable we need
+            // to store the input in
+            if (Read.Word() != ";" and Read.Word() != ",") {
+                Error.ExpectedSeparatorForInput(Read);
+            }
+            Read.GetNextWord();
+        }
+        // Get the console input
+        Asm.ConsoleInput();
+        // Assign the console input
+        AssignInput();
+        return true;
+    }
+    return false;
+}
 
 
+// AssignInput() stores the variable from the console
+// Example:
+// INPUT "Enter your number: "; A#
+void Compiler::AssignInput() {
+    std::string Name = Read.Word();
+    // If the variable is not reserved, create an undeclared variable
+    if (!Data.IsAlreadyReserved(Name)) {
+        NotDIM();
+    }
+    Read.GetNextWord();
 
+    // Check to see if we are assigning to a member of an UDT
+    if (Read.Word() == ".") {
+        std::string Member = AssignUDTMember(Name);
+
+        // Convert the console input from string to the appropriate type of the
+        // UDT member being assigned, if necessary.
+        if (Data.GetUDTData(Name).Type.Members[Member].Type == Data.Double or
+            Data.GetUDTData(Name).Type.Members[Member].Type == Data.Integer) {
+            Asm.ConvertToNumber();
+        }
+
+        // Assign the member variable's name and info
+        Asm.AssignUDTMember(Name, Data.GetUDTData(Name).TypeName,
+                            Member, Data.GetUDTData(Name).Type.Members[Member].Type);
+        Read.GetNextWord();
+        return ;
+    }
+
+    // Check to see if we are assigning an array item
+    if (Read.Word() == "(") {
+        // Get the array item
+        AssignArrayItem(Name);
+        // The third item on the stack is the array item (EBX). To use
+        // Asm.AssignArrayItem, the array item has to be second on the stack.
+        // --> We need to re-order the stack so EBX is the second item.
+        Asm.POP("EBX");
+        Asm.POP("EDI");
+        Asm.POP("ESI");
+        Asm.PUSH("EDI");
+        Asm.PUSH("EBX");
+        Asm.PUSH("ESI");
+
+        // Convert the string input, if necessary.
+        if (Data.GetArrayData(Name).Type == Data.Integer or
+            Data.GetArrayData(Name).Type == Data.Double) {
+            Asm.ConvertToNumber();
+        }
+
+        // Assign the array item to the array
+        Asm.AssignArrayItem(Name, Data.GetArrayData(Name).Type);
+        Read.GetNextWord();
+        return ;
+    }
+
+    // Check to see if we are assigning a numeric type (Int, Double)
+    if (Data.GetDataType(Name) == Data.Number) {
+        Asm.ConvertToNumber();
+    }
+
+    // Assign the number
+    Asm.AssignIt(Name);
+    return ;
+}
+
+
+// SubFunction() handles the declaration of all functions and subroutines of
+// functions.
+// Examples:
+//   Sub A () As Integer : End SUB
+//   Function Aaa (A As Integer, B As Double, C As String) As String : End Sub
+//   Declare Function Sleep Lib "Kernel32.dll" Alias "Sleep" (A As Integer) As _
+//       Integer
+void Compiler::SubFunction(bool External) {
+    std::string Type;
+    std::string Name;
+    std::string ReturnValueType;
+
+    // Check if we have a function or subroutine of a function
+    Type = Read.Word();
+    Read.GetNextWord();
+
+    // Get the name of the function
+    Name = Read.Word();
+
+    // Validate the name
+    if (Read.WordType() != Read.Identifier) {
+        Error.BadName(Read);
+    }
+
+    // Check if the name already exists in the scope
+    if (Data.AlreadyExistsInScope(Name)) {
+        Error.AlreadyReserved(Read);
+    }
+
+    // Update the scope of Read, Write, and Database objects
+    Write.EnterSubFunction();
+    Data.EnterNewScope();
+    Read.GetNextWord();
+
+    // Add the new sub/function to the database and create it in assembly
+    Data.AddSubFunction(Type, Name, External);
+    Asm.CreateSubFunction(Name, External);
+
+    // For external functions, we need to get the library, its alias, and which
+    // calling convention to use.
+    if (External) {
+        SubFunctionLibAliasCall(Name);
+    }
+
+    // Verify there is a parenthesis to nest parameters
+    if (Read.Word() != "(") {
+        Error.ExpectedParameters(Read);
+    }
+
+    // Loop through all available the parameters
+    do {
+        Read.GetNextWord();
+        // Break condition, if we a closing parenthesis and have no parameters 
+        if (Read.Word() == ")") {
+            break;
+        }
+
+        // Get the current parameter
+        GetParameters(Name);
+        Read.GetNextWord();
+    } while (Read.Word() == ","); // Keep looping while we have a comma
+
+    // Verify we have a closing parenthesis after all the parameters
+    if (Read.Word() != ")") {
+        Error.NoEndToParameters(Read);
+    }
+
+    // Check the next word to see if it is "FUNCTION"
+    // If it is, then we need the return value.
+    Read.GetNextWord();
+    if (Type == "FUNCTION") {
+        // Expected keyword "AS" after the function parameters inform the
+        // compiler the function type
+        if (Read.Word() != "AS") {
+            Error.ExpectedAs(Read);
+        }
+
+        // Check to see if the return type is valid
+        Read.GetNextWord();
+        if (Read.Word() != "INTEGER" and
+            Read.Word() != "DOUBLE"  and
+            Read.Word() != "STRING"  and
+            Data.IsType(Read.Word())) {
+            Error.BadType(Read); // Report an error
+        }
+
+        // Store return value's type, then store it in the database
+        ReturnValueType = Read.Word();
+        Data.AddReturnValue(Name, Read.Word());
+
+        // If this is an internal function, then the compiler needs to create a
+        // RESULT variable to store its return value in based on its type.
+        if (!External) {
+            std::string curr = Read.Word();
+            if (curr == "INTEGER" or curr == "DOUBLE"  or curr == "STRING") {
+
+                // Case where we have a integer
+                if (curr == "INTEGER") {
+                    Asm.CreateInteger("RESULT", "EBP-4");
+                }
+
+                // Case where we have a double
+                if (curr == "DOUBLE") {
+                    Asm.CreateDouble("RESULT", "EBP-8");
+                }
+
+                // Case where we have a string
+                if (curr == "STRING") {
+                    Asm.CreateString("RESULT", "EBP-4");
+                }
+            }
+
+            // If the data type is a UDT, then the compiler needs add relevant
+            // information to the database
+            if (Data.IsType(curr)) {
+                Data.AddUDTData(Type, "RESULT", Data.GetScopeID() + 
+                                       Data.StripJunkOff("RESULT"));
+            }
+        }
+        Read.GetNextWord();
+    }
+
+    // Prepare all of the functions parameters
+    PrepareParameters(Name);
+
+    // If we dont have an end of line, then the compiler should report an error
+    if (Read.WordType() != Read.EndOfLine) {
+        if (External and Read.WordType() == Read.None) {}
+            else {
+            Error.EndOfLine(Read);
+        }
+    }
+
+    // If this is an internal function, then read inside its scope
+    if (!External) {
+        InsideSubFunction(Name);
+    }
+
+    // Tell the database and writing objects that we're done with the function
+    Data.ExitScope();
+    Write.ExitSubFunction();
+
+    // If this was an internal function (not a sub-function or external), then
+    // add its return its value
+    if (Type == "FUNCTION" and !External) {
+        Asm.ReturnValue(Name, ReturnValueType);
+    }
+
+    // Finish creating the subfunction
+    Asm.EndCreateSubFunction(Name, External);
+    return ;
+}
+
+
+// GetParameters() stores all the parameters for each function in the database
+// Example:
+//   Function A (A As Integer, B As Double, C as String) As Integer
+void Compiler::GetParameters(std::string Name) {
+    std::string Type;
+    std::string ParameterName;
+    std::string How;
+
+    // Check if the compiler is passing by value or reference
+    if (Read.Word() == "BYVAL" or Read.Word() == "BYREF") {
+        How = Read.Word();
+        Read.GetNextWord();
+    }
+    // By default, the compiler will pass the parameter by value
+    else {
+        How = "BYVAL";
+    }
+
+    // Verify the name of the parameter
+    ParameterName = Read.Word();
+    if (Read.WordType() != Read.Identifier) {
+        Error.BadName(Read);
+    }
+
+    // Check to see if the parameter is already reserved in the database
+    if (Data.IsAlreadyReservedInParameters(Name, ParameterName)) {
+        Error.AlreadyReservedInParameters(Read);
+    }
+
+    // Check to see if the next word is the keyword "AS"
+    Read.GetNextWord();
+    if (Read.Word() != "AS") {
+        Error.ExpectedAs(Read);
+    }
+
+    // Report an error if the parameter is an invalid type
+    Read.GetNextWord();
+    Type = Read.Word();
+    if (Type != "INTEGER" and Type != "DOUBLE" and Type != "STRING" and !Data.IsType(Type)) {
+        Error.BadType(Read);
+    }
+
+    // Get the assembly data for the integer parameter
+    if (Type == "INTEGER") {
+        SimpleDataInfo Info;
+        if (Mangle) {
+            Info.AsmName = Data.GetScopeID() + Data.StripJunkOff(ParameterName);
+        }
+        else {
+            Info.AsmName = Data.StripJunkOff(ParameterName);
+        }
+        Info.Type = Data.Integer;
+        Data.AddSimpleData(ParameterName, Info);
+    }
+
+    // Get the assembly data for the double parameter
+    if (Type == "DOUBLE") {
+        SimpleDataInfo Info;
+        if (Mangle) {
+            Info.AsmName = Data.GetScopeID() + Data.StripJunkOff(ParameterName);
+        }
+        else {
+            Info.AsmName = Data.StripJunkOff(ParameterName);
+        }
+        Info.Type = Data.Double;
+        Data.AddSimpleData(ParameterName, Info);
+    }
+
+    // Get the assembly data for the string parameter
+    if (Type == "STRING") {
+        SimpleDataInfo Info;
+        if (Mangle) {
+            Info.AsmName = Data.GetScopeID() + Data.StripJunkOff(ParameterName);
+        }
+        else {
+            Info.AsmName = Data.StripJunkOff(ParameterName);
+        }
+        Info.Type = Data.String;
+        Data.AddSimpleData(ParameterName, Info);
+    }
+
+    // Get the assembly data for the UDT parameter
+    if (Data.IsType(Type)) {
+        if (Mangle) {
+            Data.AddUDTData(Type, ParameterName, Data.GetScopeID() + Data.StripJunkOff(ParameterName));
+        }
+        else {
+            Data.AddUDTData(Type, ParameterName, Data.StripJunkOff(ParameterName));
+        }
+    }
+
+    // Add the parameter to the database
+    Data.AddParameter(Name, ParameterName, Type, How);
+    return ;
+}
+
+
+// InsideSubFunction() parses the block of code inside a user-defined function
+void Compiler::InsideSubFunction(std::string Name) {
+
+    // Get the first word and keep looping until we encounter End Function,
+    // End Sub, or undefined behavor, in which case the compiler will report
+    // an error.
+    Read.GetNextWord();
+    while (1) {
+        // The compiler will not allow function declarations inside functions
+        if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+            Error.SubFunctionMustBeGlobal(Read);
+        }
+
+        // Call statement to deal with normal commands, and if it doesn't find
+        // anything, let's take over
+        if (!Statement()) {
+            // Case where Word is a directive
+            if (Read.Word() == "$") {
+                Read.GetNextWord();
+                Directives(Read.Word());
+            }
+
+            // Case where Word is an "END" statement
+            if (Read.Word() == "END") {
+                Read.GetNextWord();
+
+                // If we are ending a sub-function, then we break out of being
+                // inside InsideSubFunction()
+                if (Data.GetSubFunctionInfo(Name).Type == Read.Word()) {
+                    Read.GetNextWord();
+                    break;
+                }
+
+                // There is a type mismatch if we find "SUB" or "FUNCTION" at
+                // this point.
+                if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+                    Error.MismatchedSubFunction(Read);
+                }
+
+                // Check for a new line character
+                if (Read.WordType() != Read.EndOfLine) {
+                    Error.EndOfLine(Read);
+                }
+
+                // If there is an "END" statement by itself on a line, then
+                // terminate the program
+                Asm.EndProgram();
+                Read.GetNextWord();
+                continue;
+            }
+
+            // Case where Word is a result, break since we are done
+            if (Read.Word() == "RESULT") {
+                Read.GetNextWord();
+                break;
+            }
+
+            // Make sure the function has an end by checking for a new line
+            // afterwards
+            if (Read.WordType() == Read.None) {
+                Error.NoEndSubFunction(Read);
+            }
+            if (Read.WordType() == Read.EndOfLine) {
+                Read.GetNextWord();
+                continue;
+            }
+
+            // Assign NotDIM (an undeclared variable)
+            NotDIM();
+            Assignment();
+        }
+
+        // Check for an end of line
+        if (Read.WordType() != Read.EndOfLine) {
+
+            // Report and error if we encounter the end of the file before an
+            // "EndIf" statement
+            if (Read.WordType() == Read.None) {
+                Error.NoEndIf(Read);
+            }
+            Error.EndOfLine(Read);
+        }
+        // Get the next word
+        Read.GetNextWord();
+    }
+    return ;
+}
+
+
+// CallSubFunction() makes sure we have a function to call and then calls it
+// Example:
+//   A# = MyFunc(Integer1, Double2, String3)
+void Compiler::CallSubFunction(std::string Name, bool ReturnValue) {
+    // If optimization has been enables, include the subfunction in the
+    // compiler database
+    if (Optimize) {
+        Data.UsingSubFunction(Name);
+    }
+
+    // Get the opening parenthesis to start reading subfunction parameters
+    Read.GetNextWord();
+    if (Read.Word() != "(") {
+        Error.ExpectedParameters(Read);
+    }
+
+    // Case for a subroutine/subfunction
+    if (Data.GetSubFunctionInfo(Name).Type == "SUB") {
+
+        // If the function has no parameters, then simply call the function
+        if (Data.GetSubFunctionInfo(Name).ParamCount == 0) {
+            Asm.InvokeSubFunction(Name);
+            Read.GetNextWord();
+        }
+
+        // Otherwise, read in the function parameters before invoking it
+        else {
+            PassParameters(Name);
+            Asm.InvokeSubFunction(Name);
+            UnprepareParameters(Name);
+        }
+    }
+
+    // Case for a function
+    if (Data.GetSubFunctionInfo(Name).Type == "FUNCTION") {
+
+        // If the function has no parameters, then simply call the function
+        if (Data.GetSubFunctionInfo(Name).ParamCount == 0) {
+            Asm.InvokeSubFunction(Name);
+            Read.GetNextWord();
+        }
+
+        // Otherwise, read in the function parameters before invoking it
+        else {
+            PassParameters(Name);
+            Asm.InvokeSubFunction(Name);
+            UnprepareParameters(Name);
+        }
+
+        // If the function has no return value, then we can clean it up
+        if (!ReturnValue) {
+            Asm.CleanUpReturnValue(Name, Data.GetSubFunctionInfo(Name).ReturnValue.Type);
+        }
+
+        // Otherwise we need to push the function's return value onto the stack
+        else {
+            Asm.PushReturnValue(Name, Data.GetSubFunctionInfo(Name).ReturnValue.Type);
+        }
+    }
+
+    // Verify we ahave a closing parenthesis regardless if the function or
+    // subroutine/subfunction had parameters. Report an error if we didn't find
+    // a closing parenthesis.
+    if (Read.Word() != ")") {
+        Error.ExpectedParameters(Read);
+    }
+    return ;
+}
+
+
+// PassParameters() passes the parameters to the function. It's important to
+// note that functions expect parameters to be ordered, and they are coming off
+// of a stack in reverse. The compiler will also have to deal with passing
+// parameters by reference, since they can be modified inside the function.
+void Compiler::PassParameters(std::string Name) {
+    // Get how many parameters we have
+    int ParamCount = Data.GetSubFunctionInfo(Name).ParamCount;
+
+    // Create the pool of memory to temporarily store the parameters
+    Asm.AllocateParameterPool(Data.GetSubFunctionInfo(Name).SizeOfParameters);
+
+    // We haven't filled the pool any yet, so we are starting from 0
+    Data.SetParameterPoolSizeFilled(Name, 0);
+
+    // Now, store every parameter in the pool
+    for (int i = 1; i <= ParamCount; ++i) {
+        // Get the info first for the parameter
+        std::string How = Data.GetSubFunctionInfo(Name).Parameters[i].How;
+        std::string Type = Data.GetSubFunctionInfo(Name).Parameters[i].Type;
+        std::string ParamName = Data.GetSubFunctionInfo(Name).Parameters[i].Name;
+        std::string AsmName = Data.GetSubFunctionInfo(Name).Parameters[i].AsmName;
+        int Size;
+
+        // Case where the type is a integer
+        if (Type == "INTEGER") {
+
+            // Get the size of the parameter pool
+            Size = Data.GetParameterPoolSizeFilled(Name);
+
+            // Then get the parameter (either the value or address)
+            if (How == "BYVAL") {
+                Expression(Data.Number);
+            }
+            else {
+                ByRefExpression(Data.Number);
+            }
+
+            // Round the result to an integer
+            Asm.RoundToInteger();
+
+            // Put the parameter in the pool
+            Asm.AddToParameterPool(Data.Integer, Size);
+            // Now that we have another integer in the pool, the next available slot
+            // will be four bytes further in
+            Data.SetParameterPoolSizeFilled(Name, Size + 4);
+        }
+
+        // Case where the type is a string
+        if (Type == "STRING") {
+            // See how much of the pool has been filled
+            Size = Data.GetParameterPoolSizeFilled(Name);
+
+            // Get the result of the expression
+            if (How == "BYVAL") {
+                Expression(Data.String);
+            }
+            else {
+                ByRefExpression(Data.String);
+            }
+            // Add the string to the pool of parameters
+            Asm.AddToParameterPool(Data.String, Size);
+
+            // Make room for the next parameter 
+            Data.SetParameterPoolSizeFilled(Name, Size + 4);
+        }
+
+        // Case where the type is a double
+        if (Type == "DOUBLE") {
+            // See how much of the pool is occupied
+            Size = Data.GetParameterPoolSizeFilled(Name);
+
+            // Get the result of the expression
+            if (How == "BYVAL") {
+                Expression(Data.Number);
+                // If we are passing by value, the size is 8 bytes, so store and 
+                // make room for the next one
+                Asm.AddToParameterPool(Data.Double, Size);
+                Data.SetParameterPoolSizeFilled(Name, Size + 8);
+            }
+            else {
+                Expression(Data.Number);
+                // If we are just passing by reference, we only need 4 bytes (a pointer)
+                Asm.AddToParameterPool(Data.Integer, Size);
+                Data.SetParameterPoolSizeFilled(Name, Size + 4);
+            }
+        }
+
+        // Case where the type is a UDT
+        if (Data.IsType(Type)) {
+            // Get how much room is available
+            Size = Data.GetParameterPoolSizeFilled(Name);
+            // Get the UDT
+            Expression(Data.UDT, Type);
+            // Add it to the pool (only the reference)
+            Asm.AddToParameterPool(Data.Type, Size);
+            // Since we have added to the pool, update information
+            Data.SetParameterPoolSizeFilled(Name, Size + 4);
+        }
+        // If we have finished all the paramters, break from our loop
+        if (i == ParamCount) {
+            break;
+        }
+        // Otherwise, we need a comma to separate the parameters
+        if (Read.Word() != ",") {
+            Error.ExpectedNextParameter(Read);
+        }
+    }
+
+    // Now that we have all the parameters loaded into the parameter pool, let's
+    // transfer them to the stack in reverse order. Basically, we do the opposite
+    // that we did above. Push the parameter from the pool to the stack, and then
+    // update the counter, telling the pool that we have successfully pushed 
+    // a parameter.
+    for (int j = ParamCount; j >= 1; --j) { // Count backwords, pushing as we go
+        std::string Type = Data.GetSubFunctionInfo(Name).Parameters[j].Type;
+        std::string How = Data.GetSubFunctionInfo(Name).Parameters[j].How;
+        if (Type == "INTEGER") {
+            Data.SetParameterPoolSizeFilled(Name, Data.GetParameterPoolSizeFilled(Name) - 4);
+            Asm.PushParameterPool(Data.Integer, Data.GetParameterPoolSizeFilled(Name));
+        }
+        if (Type == "STRING") {
+            Data.SetParameterPoolSizeFilled(Name, Data.GetParameterPoolSizeFilled(Name) - 4);
+            Asm.PushParameterPool(Data.String, Data.GetParameterPoolSizeFilled(Name));
+        }
+        if (Type == "DOUBLE") {
+            Data.SetParameterPoolSizeFilled(Name, Data.GetParameterPoolSizeFilled(Name) - 8);
+            Asm.PushParameterPool(Data.Double, Data.GetParameterPoolSizeFilled(Name));
+        }
+        if (Data.IsType(Type)) {
+            Data.SetParameterPoolSizeFilled(Name, Data.GetParameterPoolSizeFilled(Name) - 4);
+            if (How == "BYVAL") {
+                Asm.PushParameterPool(Data.Type, Data.GetParameterPoolSizeFilled(Name));
+            }
+            else {
+                Asm.PushParameterPool(Data.Integer, Data.GetParameterPoolSizeFilled(Name));
+            }
+        }
+    }
+    return ;
+}
+
+
+void DeclareSubFunction();
+void SubFunctionLibAliasCall(std::string Name);
+void CallSubFunction(std::string Name, bool ReturnValue = false);
+
+void PassParameters(std::string Name);
+void ByRefExpression(int Type);
+
+bool FirstDirectives(std::string Directive);
+
+void ChooseAppType();
+
+void OptimizeApp();
+
+bool Directives(std::string Directive);
+void IncludeFile();
+
+void DropDownToAsm();
+void CompressApp();
+
+void IfDef();
+void IfNDef();
+
+void Const();
+
+void MangleNames();
+void PrepareProgram();
 
 
 
