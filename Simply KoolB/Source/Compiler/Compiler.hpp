@@ -68,27 +68,26 @@ public:
     bool DealWithConsoleKeywords();
     void AssignInput();
 
-    void GetParameters(std::string Name);
+    void SubFunction(bool External = false);
+    void InsideSubFunction(std::string Name);
+    void DeclareSubFunction();
+    void CallSubFunction(std::string Name, bool ReturnValue = false);
+    void SubFunctionLibAliasCall(std::string Name);
+
+    void GetParameters(std::string Name); // done
+    void PassParameters(std::string Name); // done
+    void ByRefExpression(int Type);
+    
     void PrepareParameters(std::string Name);
     void UnprepareParameters(std::string Name);
 
-    void SubFunction(bool External = false);
-    void InsideSubFunction(std::string Name);
-    // TODO
-    void DeclareSubFunction();
-    void SubFunctionLibAliasCall(std::string Name);
-    void CallSubFunction(std::string Name, bool ReturnValue = false);
-
-    void PassParameters(std::string Name);
-    void ByRefExpression(int Type);
-
-    bool FirstDirectives(std::string Directive);
-
     void ChooseAppType();
 
+    // TODO
     void OptimizeApp();
 
     bool Directives(std::string Directive);
+    bool FirstDirectives(std::string Directive);
     void IncludeFile();
 
     void DropDownToAsm();
@@ -1982,6 +1981,251 @@ void Compiler::SubFunction(bool External) {
 }
 
 
+// InsideSubFunction() parses the block of code inside a user-defined function
+void Compiler::InsideSubFunction(std::string Name) {
+
+    // Get the first word and keep looping until we encounter End Function,
+    // End Sub, or undefined behavor, in which case the compiler will report
+    // an error.
+    Read.GetNextWord();
+    while (1) {
+        // The compiler will not allow function declarations inside functions
+        if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+            Error.SubFunctionMustBeGlobal(Read);
+        }
+
+        // Call statement to deal with normal commands, and if it doesn't find
+        // anything, let's take over
+        if (!Statement()) {
+            // Case where Word is a directive
+            if (Read.Word() == "$") {
+                Read.GetNextWord();
+                Directives(Read.Word());
+            }
+
+            // Case where Word is an "END" statement
+            if (Read.Word() == "END") {
+                Read.GetNextWord();
+
+                // If we are ending a sub-function, then we break out of being
+                // inside InsideSubFunction()
+                if (Data.GetSubFunctionInfo(Name).Type == Read.Word()) {
+                    Read.GetNextWord();
+                    break;
+                }
+
+                // There is a type mismatch if we find "SUB" or "FUNCTION" at
+                // this point.
+                if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
+                    Error.MismatchedSubFunction(Read);
+                }
+
+                // Check for a new line character
+                if (Read.WordType() != Read.EndOfLine) {
+                    Error.EndOfLine(Read);
+                }
+
+                // If there is an "END" statement by itself on a line, then
+                // terminate the program
+                Asm.EndProgram();
+                Read.GetNextWord();
+                continue;
+            }
+
+            // Case where Word is a result, break since we are done
+            if (Read.Word() == "RESULT") {
+                Read.GetNextWord();
+                break;
+            }
+
+            // Make sure the function has an end by checking for a new line
+            // afterwards
+            if (Read.WordType() == Read.None) {
+                Error.NoEndSubFunction(Read);
+            }
+            if (Read.WordType() == Read.EndOfLine) {
+                Read.GetNextWord();
+                continue;
+            }
+
+            // Assign NotDIM (an undeclared variable)
+            NotDIM();
+            Assignment();
+        }
+
+        // Check for an end of line
+        if (Read.WordType() != Read.EndOfLine) {
+
+            // Report and error if we encounter the end of the file before an
+            // "EndIf" statement
+            if (Read.WordType() == Read.None) {
+                Error.NoEndIf(Read);
+            }
+            Error.EndOfLine(Read);
+        }
+        // Get the next word
+        Read.GetNextWord();
+    }
+    return ;
+}
+
+
+// DeclareSubFunction() validates if a function is an external function
+// Example:
+//   DECLARE SUB A()
+void Compiler::DeclareSubFunction() {
+    Read.GetNextWord();
+    // Report an error if we got here and are not declaring a subfunction
+    if (Read.Word() != "SUB" and Read.Word() != "FUNCTION") {
+        Error.ExpectedSubFunction(Read);
+    }
+
+    // Mark the subfunction as declared
+    SubFunction(true);
+    return ;
+}
+
+
+// CallSubFunction() makes sure we have a function to call and then calls it
+// Example:
+//   A# = MyFunc(Integer1, Double2, String3)
+void Compiler::CallSubFunction(std::string Name, bool ReturnValue) {
+    // If optimization has been enables, include the subfunction in the
+    // compiler database
+    if (Optimize) {
+        Data.UsingSubFunction(Name);
+    }
+
+    // Get the opening parenthesis to start reading subfunction parameters
+    Read.GetNextWord();
+    if (Read.Word() != "(") {
+        Error.ExpectedParameters(Read);
+    }
+
+    // Case for a subroutine/subfunction
+    if (Data.GetSubFunctionInfo(Name).Type == "SUB") {
+
+        // If the function has no parameters, then simply call the function
+        if (Data.GetSubFunctionInfo(Name).ParamCount == 0) {
+            Asm.InvokeSubFunction(Name);
+            Read.GetNextWord();
+        }
+
+        // Otherwise, read in the function parameters before invoking it
+        else {
+            PassParameters(Name);
+            Asm.InvokeSubFunction(Name);
+            UnprepareParameters(Name);
+        }
+    }
+
+    // Case for a function
+    if (Data.GetSubFunctionInfo(Name).Type == "FUNCTION") {
+
+        // If the function has no parameters, then simply call the function
+        if (Data.GetSubFunctionInfo(Name).ParamCount == 0) {
+            Asm.InvokeSubFunction(Name);
+            Read.GetNextWord();
+        }
+
+        // Otherwise, read in the function parameters before invoking it
+        else {
+            PassParameters(Name);
+            Asm.InvokeSubFunction(Name);
+            UnprepareParameters(Name);
+        }
+
+        // If the function has no return value, then we can clean it up
+        if (!ReturnValue) {
+            Asm.CleanUpReturnValue(Name, Data.GetSubFunctionInfo(Name).ReturnValue.Type);
+        }
+
+        // Otherwise we need to push the function's return value onto the stack
+        else {
+            Asm.PushReturnValue(Name, Data.GetSubFunctionInfo(Name).ReturnValue.Type);
+        }
+    }
+
+    // Verify we ahave a closing parenthesis regardless if the function or
+    // subroutine/subfunction had parameters. Report an error if we didn't find
+    // a closing parenthesis.
+    if (Read.Word() != ")") {
+        Error.ExpectedParameters(Read);
+    }
+    return ;
+}
+
+
+// SubFunctionLibAliasCall() gets information necessary to make function calls
+// Example:
+//   Declare Function Sleep Lib "Kernel32.dll" Alias "Sleep" Call Std (I As _
+//        external function information)          
+void Compiler::SubFunctionLibAliasCall(std::string Name) {
+    // The three things we need to know about the library where the function is
+    // located, the actual name of the function, and what calling convention to use
+    std::string Library;
+    std::string Alias = Name;
+    std::string CallConv;
+    // On Windows, the default calling convention is standard 
+    #ifdef Windows
+    CallConv = "STD";
+    #endif
+    // On Linux, the default calling convention is C
+    // #ifdef Linux
+    // CallConv = "C";
+    // #endif
+
+    // Get the library where the function resides
+    if (Read.Word() == "LIB") {
+        Read.GetNextWord();
+
+        // Check that the library is given in string type
+        if (Read.WordType() != Read.String) {
+            Error.InvalidLibrary(Read);
+        }
+        Library = Read.Word();
+        Read.GetNextWord();
+    }
+
+    // Get the alias the compiler will use to call the function
+    if (Read.Word() == "ALIAS") {
+        Read.GetNextWord();
+
+        // Type check for Alias
+        if (Read.WordType() != Read.String) {
+            Error.InvalidAlias(Read);
+        }
+
+        Alias = Read.Word();
+        Read.GetNextWord();
+    }
+
+    // Handle the function call
+    if (Read.Word() == "CALL") {
+        Read.GetNextWord();
+
+        // Right now, the calling convention must either be C or Std
+        if (Read.Word() != "STD") {
+            Error.InvalidCallingConvention(Read);
+        }
+
+        // Read in the calling convention
+        CallConv = Read.Word();
+        Read.GetNextWord();
+    }
+
+    // If we  have no library assigned, then report an error
+    if (Library == "") {
+        Error.ExpectedExternalSubFunction(Read);
+    }
+
+    // Add the external function information to the database
+    Data.AddExternalSubFunctionData(Name, Library, Alias, CallConv);
+    return ;
+}
+
+
+
 // GetParameters() stores all the parameters for each function in the database
 // Example:
 //   Function A (A As Integer, B As Double, C as String) As Integer
@@ -2079,182 +2323,23 @@ void Compiler::GetParameters(std::string Name) {
 }
 
 
-// InsideSubFunction() parses the block of code inside a user-defined function
-void Compiler::InsideSubFunction(std::string Name) {
-
-    // Get the first word and keep looping until we encounter End Function,
-    // End Sub, or undefined behavor, in which case the compiler will report
-    // an error.
-    Read.GetNextWord();
-    while (1) {
-        // The compiler will not allow function declarations inside functions
-        if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
-            Error.SubFunctionMustBeGlobal(Read);
-        }
-
-        // Call statement to deal with normal commands, and if it doesn't find
-        // anything, let's take over
-        if (!Statement()) {
-            // Case where Word is a directive
-            if (Read.Word() == "$") {
-                Read.GetNextWord();
-                Directives(Read.Word());
-            }
-
-            // Case where Word is an "END" statement
-            if (Read.Word() == "END") {
-                Read.GetNextWord();
-
-                // If we are ending a sub-function, then we break out of being
-                // inside InsideSubFunction()
-                if (Data.GetSubFunctionInfo(Name).Type == Read.Word()) {
-                    Read.GetNextWord();
-                    break;
-                }
-
-                // There is a type mismatch if we find "SUB" or "FUNCTION" at
-                // this point.
-                if (Read.Word() == "SUB" or Read.Word() == "FUNCTION") {
-                    Error.MismatchedSubFunction(Read);
-                }
-
-                // Check for a new line character
-                if (Read.WordType() != Read.EndOfLine) {
-                    Error.EndOfLine(Read);
-                }
-
-                // If there is an "END" statement by itself on a line, then
-                // terminate the program
-                Asm.EndProgram();
-                Read.GetNextWord();
-                continue;
-            }
-
-            // Case where Word is a result, break since we are done
-            if (Read.Word() == "RESULT") {
-                Read.GetNextWord();
-                break;
-            }
-
-            // Make sure the function has an end by checking for a new line
-            // afterwards
-            if (Read.WordType() == Read.None) {
-                Error.NoEndSubFunction(Read);
-            }
-            if (Read.WordType() == Read.EndOfLine) {
-                Read.GetNextWord();
-                continue;
-            }
-
-            // Assign NotDIM (an undeclared variable)
-            NotDIM();
-            Assignment();
-        }
-
-        // Check for an end of line
-        if (Read.WordType() != Read.EndOfLine) {
-
-            // Report and error if we encounter the end of the file before an
-            // "EndIf" statement
-            if (Read.WordType() == Read.None) {
-                Error.NoEndIf(Read);
-            }
-            Error.EndOfLine(Read);
-        }
-        // Get the next word
-        Read.GetNextWord();
-    }
-    return ;
-}
-
-
-// CallSubFunction() makes sure we have a function to call and then calls it
-// Example:
-//   A# = MyFunc(Integer1, Double2, String3)
-void Compiler::CallSubFunction(std::string Name, bool ReturnValue) {
-    // If optimization has been enables, include the subfunction in the
-    // compiler database
-    if (Optimize) {
-        Data.UsingSubFunction(Name);
-    }
-
-    // Get the opening parenthesis to start reading subfunction parameters
-    Read.GetNextWord();
-    if (Read.Word() != "(") {
-        Error.ExpectedParameters(Read);
-    }
-
-    // Case for a subroutine/subfunction
-    if (Data.GetSubFunctionInfo(Name).Type == "SUB") {
-
-        // If the function has no parameters, then simply call the function
-        if (Data.GetSubFunctionInfo(Name).ParamCount == 0) {
-            Asm.InvokeSubFunction(Name);
-            Read.GetNextWord();
-        }
-
-        // Otherwise, read in the function parameters before invoking it
-        else {
-            PassParameters(Name);
-            Asm.InvokeSubFunction(Name);
-            UnprepareParameters(Name);
-        }
-    }
-
-    // Case for a function
-    if (Data.GetSubFunctionInfo(Name).Type == "FUNCTION") {
-
-        // If the function has no parameters, then simply call the function
-        if (Data.GetSubFunctionInfo(Name).ParamCount == 0) {
-            Asm.InvokeSubFunction(Name);
-            Read.GetNextWord();
-        }
-
-        // Otherwise, read in the function parameters before invoking it
-        else {
-            PassParameters(Name);
-            Asm.InvokeSubFunction(Name);
-            UnprepareParameters(Name);
-        }
-
-        // If the function has no return value, then we can clean it up
-        if (!ReturnValue) {
-            Asm.CleanUpReturnValue(Name, Data.GetSubFunctionInfo(Name).ReturnValue.Type);
-        }
-
-        // Otherwise we need to push the function's return value onto the stack
-        else {
-            Asm.PushReturnValue(Name, Data.GetSubFunctionInfo(Name).ReturnValue.Type);
-        }
-    }
-
-    // Verify we ahave a closing parenthesis regardless if the function or
-    // subroutine/subfunction had parameters. Report an error if we didn't find
-    // a closing parenthesis.
-    if (Read.Word() != ")") {
-        Error.ExpectedParameters(Read);
-    }
-    return ;
-}
-
-
 // PassParameters() passes the parameters to the function. It's important to
 // note that functions expect parameters to be ordered, and they are coming off
-// of a stack in reverse. The compiler will also have to deal with passing
-// parameters by reference, since they can be modified inside the function.
+// the call stack in reverse. The compiler will also have to deal with passing
+// parameters by reference, so they return modified inside the function.
 void Compiler::PassParameters(std::string Name) {
-    // Get how many parameters we have
+    // Get the number of parametershaven'tthe function has
     int ParamCount = Data.GetSubFunctionInfo(Name).ParamCount;
 
-    // Create the pool of memory to temporarily store the parameters
+    // Allocate memory to store the parameters temporarily
     Asm.AllocateParameterPool(Data.GetSubFunctionInfo(Name).SizeOfParameters);
 
-    // We haven't filled the pool any yet, so we are starting from 0
+    // Set the initial pool size to 0
     Data.SetParameterPoolSizeFilled(Name, 0);
 
-    // Now, store every parameter in the pool
+    // Store every parameter in the pool
     for (int i = 1; i <= ParamCount; ++i) {
-        // Get the info first for the parameter
+        // Get information for the current parameter
         std::string How = Data.GetSubFunctionInfo(Name).Parameters[i].How;
         std::string Type = Data.GetSubFunctionInfo(Name).Parameters[i].Type;
         std::string ParamName = Data.GetSubFunctionInfo(Name).Parameters[i].Name;
@@ -2264,10 +2349,10 @@ void Compiler::PassParameters(std::string Name) {
         // Case where the type is a integer
         if (Type == "INTEGER") {
 
-            // Get the size of the parameter pool
+            // Get the current size of the parameter pool
             Size = Data.GetParameterPoolSizeFilled(Name);
 
-            // Then get the parameter (either the value or address)
+            // Evaluate the expression
             if (How == "BYVAL") {
                 Expression(Data.Number);
             }
@@ -2278,19 +2363,19 @@ void Compiler::PassParameters(std::string Name) {
             // Round the result to an integer
             Asm.RoundToInteger();
 
-            // Put the parameter in the pool
+            // Add the parameter to the pool
             Asm.AddToParameterPool(Data.Integer, Size);
-            // Now that we have another integer in the pool, the next available slot
-            // will be four bytes further in
+
+            // Mark that the pool is filled with a 4 byte integer
             Data.SetParameterPoolSizeFilled(Name, Size + 4);
         }
 
         // Case where the type is a string
         if (Type == "STRING") {
-            // See how much of the pool has been filled
+            // Get the current size of the parameter pool
             Size = Data.GetParameterPoolSizeFilled(Name);
 
-            // Get the result of the expression
+            // Evaluate the expression
             if (How == "BYVAL") {
                 Expression(Data.String);
             }
@@ -2306,20 +2391,21 @@ void Compiler::PassParameters(std::string Name) {
 
         // Case where the type is a double
         if (Type == "DOUBLE") {
-            // See how much of the pool is occupied
+            // Get the current size of the parameter pool
             Size = Data.GetParameterPoolSizeFilled(Name);
 
-            // Get the result of the expression
+            // Evaluate the expression
             if (How == "BYVAL") {
                 Expression(Data.Number);
-                // If we are passing by value, the size is 8 bytes, so store and 
-                // make room for the next one
+                // If we are passing by value, a Double costs 8 bytes
                 Asm.AddToParameterPool(Data.Double, Size);
                 Data.SetParameterPoolSizeFilled(Name, Size + 8);
             }
             else {
                 Expression(Data.Number);
-                // If we are just passing by reference, we only need 4 bytes (a pointer)
+
+                // If we are passing by reference, then we only need 4 bytes to
+                // store a pointer to the Double.
                 Asm.AddToParameterPool(Data.Integer, Size);
                 Data.SetParameterPoolSizeFilled(Name, Size + 4);
             }
@@ -2327,31 +2413,34 @@ void Compiler::PassParameters(std::string Name) {
 
         // Case where the type is a UDT
         if (Data.IsType(Type)) {
-            // Get how much room is available
+            // Get the current size of the parameter pool
             Size = Data.GetParameterPoolSizeFilled(Name);
-            // Get the UDT
+
+            // Evaluate the expression
             Expression(Data.UDT, Type);
-            // Add it to the pool (only the reference)
+
+            // Add the parameter to the pool
             Asm.AddToParameterPool(Data.Type, Size);
-            // Since we have added to the pool, update information
+
+            // Mark that the pool is filled with an additional 4 bytes
             Data.SetParameterPoolSizeFilled(Name, Size + 4);
         }
-        // If we have finished all the paramters, break from our loop
+
+        // Break from the loop if we loaded all parameters
         if (i == ParamCount) {
             break;
         }
-        // Otherwise, we need a comma to separate the parameters
+
+        // Find the next parameter, if one exists
         if (Read.Word() != ",") {
             Error.ExpectedNextParameter(Read);
         }
     }
 
-    // Now that we have all the parameters loaded into the parameter pool, let's
-    // transfer them to the stack in reverse order. Basically, we do the opposite
-    // that we did above. Push the parameter from the pool to the stack, and then
-    // update the counter, telling the pool that we have successfully pushed 
-    // a parameter.
-    for (int j = ParamCount; j >= 1; --j) { // Count backwords, pushing as we go
+    // Pop the parameters from the pool and push them to the stack
+    // Note: We start at the end because they are loaded into the pool in
+    //       reverse order initially.
+    for (int j = ParamCount; j >= 1; --j) {
         std::string Type = Data.GetSubFunctionInfo(Name).Parameters[j].Type;
         std::string How = Data.GetSubFunctionInfo(Name).Parameters[j].How;
         if (Type == "INTEGER") {
@@ -2380,53 +2469,742 @@ void Compiler::PassParameters(std::string Name) {
 }
 
 
-void DeclareSubFunction();
-void SubFunctionLibAliasCall(std::string Name);
-void CallSubFunction(std::string Name, bool ReturnValue = false);
+// PrepareParameters() converts parameter names into a name the stack can
+// referenece as local variable
+void Compiler::PrepareParameters(std::string Name) {
+    // The parameters start with an 8 bytes offset onto the stack
+    int offset = 8;
 
-void PassParameters(std::string Name);
-void ByRefExpression(int Type);
+    // Get the total number of parameters
+    int ParamCount = Data.GetSubFunctionInfo(Name).ParamCount;
 
-bool FirstDirectives(std::string Directive);
-
-void ChooseAppType();
-
-void OptimizeApp();
-
-bool Directives(std::string Directive);
-void IncludeFile();
-
-void DropDownToAsm();
-void CompressApp();
-
-void IfDef();
-void IfNDef();
-
-void Const();
-
-void MangleNames();
-void PrepareProgram();
-
-
-
-
-
+    // Find each parameter's location on the stack
+    for (int i = 1; i <= ParamCount; i++) {
+        // Get current parameter's name and type
+        std::string Type = Data.GetSubFunctionInfo(Name).Parameters[i].Type;
+        std::string ParamName = Data.GetSubFunctionInfo(Name).Parameters[i].Name;
+        // If the variable is a double, then it is offset by 8 bytes
+        if (Type == "DOUBLE") {
+            if (Type == "DOUBLE") {
+                Data.SetAsmName(ParamName, "EBP+" + ToStr(offset));
+                offset += 8;
+            }
+        }
+        // If the variable is a string or integer, then it is offset by 4 bytes
+        else {
+            Data.SetAsmName(ParamName, "EBP+" + ToStr(offset));
+            offset += 4;
+        }
+    }
+    return ;
+}
 
 
+// UnprepareParameters() after the function or subroutine has been called, and
+// returned its value if it returns one, free the memory that the parameters
+// previously occupied. We need to push them all off of the stack to the pool,
+// then we can free everything inside of the pool once we verify all parameters
+// made it safely to the pool.
+void Compiler::UnprepareParameters(std::string Name) {
+    // Get the total number of parameters
+    int ParamCount = Data.GetSubFunctionInfo(Name).ParamCount;
+
+    // If we with the C calling convention, adjust the stack
+    // if (Data.GetSubFunctionInfo(Name).ExternalInfo.CallingConv == "C") {
+    //     Asm.AdjustStack(Data.GetSubFunctionInfo(Name).SizeOfParameters);
+    // }
+
+    // Set the Parameter pool size to 0
+    Data.SetParameterPoolSizeFilled(Name, 0);
+
+    for (int i = 1; i <= ParamCount; i++) {
+        // Get information associated with parameter
+        std::string Type = Data.GetSubFunctionInfo(Name).Parameters[i].Type;
+        std::string How = Data.GetSubFunctionInfo(Name).Parameters[i].How;
+        std::string ParamName = Data.GetSubFunctionInfo(Name).Parameters[i].Name;
+        bool External = Data.GetSubFunctionInfo(Name).External;
+        std::string CallConv = Data.GetSubFunctionInfo(Name).ExternalInfo.CallingConv;
+
+        // Check to see if we have a valid parameter
+        if (Data.IsType(Type) or Type == "STRING" or Type == "DOUBLE") {
+            // Strings and data types need to be freed to avoid memory leaks
+            // Note: ONLY if they are passed by value.
+            if ((Type == "STRING" or Data.IsType(Type)) and How != "BYREF") {
+                // Preserve the return value of the parameter (EAX)
+                Asm.PUSH("EAX");
+
+                // Push the parameter from pool to the stack
+                Asm.PushParameterPool(Data.String, Data.GetParameterPoolSizeFilled(Name));
+
+                // Pop the parameter from the stack
+                Asm.POP("ECX");
+
+                // Free the memory
+                Asm.FreeMemory(Write.ToMain, "ECX");
+
+                // Restore the return value
+                Asm.POP("EAX");
+
+                // Adjust the pool size according to the current parameter
+                Data.SetParameterPoolSizeFilled(Name, Data.GetParameterPoolSizeFilled(Name) + 4);
+            }
+            // We are not freeing any doubles or parameters passed by reference
+            if (Type == "DOUBLE") {
+                Data.SetParameterPoolSizeFilled(Name,
+                    Data.GetParameterPoolSizeFilled(Name) + 4);
+                if (How != "BYREF") {
+                    Data.SetParameterPoolSizeFilled(Name,
+                        Data.GetParameterPoolSizeFilled(Name) + 4);
+                }
+            }
+        }
+        // All other parameters just need to be accounted for
+        else {
+            Data.SetParameterPoolSizeFilled(Name,
+                Data.GetParameterPoolSizeFilled(Name) + 4);
+        }
+    }
+
+    // Free the parameters from the parameter pool
+    Asm.FreeParameterPool();
+    return ;
+}
 
 
+// ByRefExpression() Gets a single expression and gets the address of it
+void Compiler::ByRefExpression(int Type) {
+    Read.GetNextWord();
+
+    // Check if string and identifier are valid
+    if (Read.WordType() != Read.Identifier && Read.WordType() != Read.String) {
+        Error.BadName(Read);
+    }
+
+    // Get the address of the string and push it to the stack
+    if (Data.GetDataType(Read.Word()) == Data.String) {
+        if (Type != Data.String) {
+            Error.ExpectedStringData(Read);
+        }
+        Asm.PUSH("dword[" + Data.Asm(Read.Word()) + "]");
+        Read.GetNextWord();
+        return ;
+    }
+
+    // Get the address of the number and push it to the stack
+    if (Data.GetDataType(Read.Word()) == Data.Integer or Data.GetDataType(Read.Word()) == Data.Double) {
+        if (Type != Data.Number) {
+            Error.ExpectedNumberData(Read);
+        }
+        Asm.PUSH(Data.Asm(Read.Word()));
+        Read.GetNextWord();
+        return ;
+    }
+
+    // Get the address of the UDT and push it to the stack
+    if (Data.GetDataType(Read.Word()) == Data.UDT) {
+        if (Type != Data.UDT) {
+            Error.ExpectedUDT(Read);
+        }
+        Asm.PUSH(Data.Asm(Read.Word()));
+        Read.GetNextWord();
+        return ;
+    }
+
+    // Unexpected behavior occurred, report an error
+    Error.BadName(Read);
+    return ;
+}
 
 
+// ChooseAppType() sets the app type the compiler will generate
+// Options: Console, GUI, or DLL (SO on linux <-- TODO)
+// Examples:
+//   $AppType Console
+//   $AppType GUI
+//   $AppType DLL
+void Compiler::ChooseAppType() {
+    Read.GetNextWord();
+
+    // Set the requested AppType
+    if (Read.Word() == "CONSOLE") {
+        AppType = Console;
+        return ;
+    }
+    if (Read.Word() == "GUI") {
+        AppType = GUI;
+        return ;
+    }
+    if (Read.Word() == "DLL") {
+        AppType = DLL;
+        // We will not be able to optimize a DLL in this case since they are
+        // used at runtime instead of compile time.
+        Optimize = false;
+        return ;
+    }
+
+    // Report an error if we were passed an invalid AppType
+    Error.InvalidAppType(Read);
+    return ;
+}
 
 
+// Optimize() controls the optimization flag at compile time.
+// Examples:
+//   $Optimize ON
+//   $Optimize OFF
+void Compiler::OptimizeApp() {
+    Read.GetNextWord();
+
+    // Report an error if optimize was set to something other than ON/OFF
+    if (Read.Word() != "ON" and Read.Word() != "OFF") {
+        Error.ExpectedOnOrOff(Read);
+    }
+
+    // Turn optimization either on or off
+    if (Read.Word() == "ON") {
+        Optimize = true;
+    }
+    if (Read.Word() == "OFF") {
+        Optimize = false;
+    }
+    return ;
+}
 
 
+// Directives() defines pre-processor directives on the BASIC source code
+// These are not executable statements.
+bool Compiler::Directives(std::string Directive) {
+    // APPTYPE must be declared initially, it is not a directive.
+    if (Directive == "APPTYPE") {
+        Error.CannotChangeAppType(Read);
+        return false;
+    }
+    // OPTIMIZE must be declared initially, it is not a directive.
+    if (Directive == "OPTIMIZE") {
+        Error.CannotOptimize(Read);
+        return false;
+    }
+
+    // Check for the COMPRESS directive
+    if (Directive == "COMPRESS") {
+        CompressApp();
+        Read.GetNextWord();
+        return false;
+    }
+
+    // Check for the INCLUDE directive
+    if (Directive == "INCLUDE") {
+        IncludeFile();
+        Read.GetNextWord();
+        return false;
+    }
+
+    // Check for the ASM directive
+    if (Directive == "ASM") {
+        DropDownToAsm();
+        return false;
+    }
+
+    // Check for the CONST directive
+    if (Directive == "CONST") {
+        Const();
+        return false;
+    }
+
+    // Check for the DEFINE directive
+    if (Directive == "DEFINE") {
+        Read.GetNextWord();
+        // Validate the identifier we want to DEFINE
+        if (Read.WordType() != Read.Identifier) {
+            Error.DefineMustBeIdentifier(Read);
+        }
+        // Add the DEFINE'd word to the database
+        Data.AddDefine(Read.Word());
+        Read.GetNextWord();
+        return false;
+    }
+
+    // Check for the IFDEF directive
+    if (Directive == "IFDEF") {
+        IfDef();
+        return false;
+    }
+
+    // Check for the IFNDEF directive
+    if (Directive == "IFNDEF") {
+        IfNDef();
+        return false;
+    }
+
+    // Check for the ENDIF directive
+    if (Directive == "ENDIF") {
+        // If we have already ended all the $IfDef and $IfNDef, bail out
+        if (Data.CanExitDirective() == false) {
+            Error.CannotExitDirective(Read);
+        }
+        // Exit the directive
+        Data.ExitDirective();
+        Read.GetNextWord();
+        return false;
+    }
+
+    // Check for the END directive
+    if (Directive == "END") {
+        Read.GetNextWord();
+        // "EndIf" will end an $IfDef or $IfNDef
+        if (Read.Word() == "IF") {
+            // If we have already ended all the $IfDef and $IfNDef, then we
+            // need to report an error
+            if (Data.CanExitDirective() == false) {
+                Error.CannotExitDirective(Read);
+            }
+
+            // Exit the directive
+            Data.ExitDirective();
+            Read.GetNextWord();
+            return false;
+        }
+    }
+
+    // Check for the MANGLE directive
+    if (Directive == "MANGLE") {
+        MangleNames();
+        Read.GetNextWord();
+        return false;
+    }
+
+    // Compiler found an invalid directive, report an error
+    Error.InvalidDirective(Read);
+    return false;
+}
 
 
+// FirstDirectives() handles the directives that must come before we can
+// compile. If none are provided, then use defaults
+bool Compiler::FirstDirectives(std::string Directive) {
+    // Generate an app type (Console/GUI/DLL)
+    if (Directive == "APPTYPE") {
+        ChooseAppType();
+        Read.GetNextWord();
+        return true;
+    }
+
+    // Check for optimization flag
+    if (Directive == "OPTIMIZE") {
+        OptimizeApp();
+        Read.GetNextWord();
+        return true;
+    }
+
+    // Report an error if the user passed an invalid directive
+    Error.InvalidDirective(Read);
+    return false;
+}
 
 
+// IncludeFile() includes another BASIC source code file into the program
+// Examples:
+//   $Include "Libraries/String.inc" --> Includes from the compiler's folder
+//   $Include "MyLibrary.inc"        --> Includes from the program's folder
+void Compiler::IncludeFile() {
+    // Store the old directive level
+    int OldDirectiveLevel = Data.GetDirectiveLevel();
+
+    // Set the new file's directive level to zero
+    Data.SetDirectiveLevel(0);
+
+    // Create new reading and compiler objects
+    Reading NewFile;
+    Compiler NewCompiler;
+    Read.GetNextWord();
+
+    // Get the file name, report an error if no file was found
+    if (Read.WordType() != Read.String) {
+        Error.ExpectedFileNameAfterInclude(Read);
+    }
+
+    // If the file doesn't exist, then we check if it is in the same directory
+    // as the source code file
+    if (!FileExists(Read.Word())) {
+        // Add the file name of the file to include
+        std::string NewFileName = PatchFileNames(Read.GetBookName(), Read.Word());
+
+        // If that file exists, then try to compile it
+        if (FileExists(NewFileName)) {
+            // Open the file with the new reading object
+            NewFile.OpenBook(NewFileName);
+            // Compile it with parameter IncFile set to "true"
+            NewCompiler.Compile(NewFile, true);
+
+            // Set the directive level back to the previous level before this
+            // $Include directive was encountered
+            Data.SetDirectiveLevel(OldDirectiveLevel);
+            return ;
+        }
+    }
+
+    // Open the file with the new reading object
+    NewFile.OpenBook(Read.Word());
+    // Compile the included file and set the IncFile parameter to true
+    NewCompiler.Compile(NewFile, true);
+    // Set the directive level back to the previous level
+    Data.SetDirectiveLevel(OldDirectiveLevel);
+    return ;
+}
 
 
+// DropDownToAsm() writes inline assembly code
+// Example:
+//   $Asm
+//     EXTERN ExitProcess
+//     PUSH 0
+//     CALL ExitProcess
+//   $End Asm
+void Compiler::DropDownToAsm() {
+    std::string Line;
+    Read.GetNextWord();
+
+    // If we don't have an end of the line after $Asm, report an error
+    if (Read.WordType() != Read.EndOfLine) {
+        Error.ExpectedEndOfLineAfterAsm(Read);
+    }
+
+    // Don't set the source code to uppercase - preserve the case
+    Read.SetUppercase(false);
+
+    // Loop until we encounter "$End Asm" (or error)
+    while (1) {
+        // Reset the line
+        Line = "";
+        Read.GetNextWord();
+
+        // If we found a new line first, then loop around again
+        if (Read.WordType() == Read.EndOfLine) {
+            continue;
+        }
+
+        // If we find an end of file, report an error
+        if (Read.WordType() == Read.None) {
+            Error.NoEndToAsm(Read);
+        }
+
+        // Store the current word
+        Line = Read.Word();
+        // Check to see if we have an "$End Asm"
+        if (Read.Word() == "$") {
+            Read.SetUppercase(true);
+            Read.GetNextWord();
+            if (Read.Word() == "END") {
+                Read.GetNextWord();
+                if (Read.Word() == "ASM") {
+                    Read.GetNextWord();
+                    return ;
+                }
+            }
+            // If we don't find an "$End Asm", report an error
+            Error.ExpectedEndAsm(Read);
+        }
+
+        // If we don't have a "$" as the first word of the line, then store the
+        // rest of the assembly language in Line
+        Line += Read.GetWholeLine();
+
+        // Write the inlined assembly langugage to the writing object
+        Write.Line(Write.ToMain, Line);
+    }
+    return ;
+}
+
+
+// CompressApp() controls the compression of the application (ON/OFF) 
+// Note: $Compress On at the end of a program would still take effect
+// Example:
+//   $Compress ON
+//   $Compress OFF
+void Compiler::CompressApp() {
+    Read.GetNextWord();
+    // Turn the compression on or off
+    if (Read.Word() == "ON") {
+        Compress = true;
+        return ;
+    }
+    if (Read.Word() == "OFF") {
+        Compress = false;
+        return ;
+    }
+    Error.ExpectedOnOrOff(Read);
+    return ;
+}
+
+
+// IfDef() compiles the code if the identifier has been defined earlier.
+// Otherwise, do not compile the code.
+// Example:
+//   $IfDef Windows
+//     ' Code
+//   $End If
+void Compiler::IfDef() {
+    // Enter the directive
+    Read.GetNextWord();
+    Data.EnterDirective();
+
+    // If this identifier is already defined, do not redefine it. Instead,
+    // return and continue to compile the code
+    if (Data.IsDefined(Read.Word()) == true) {
+        Read.GetNextWord();
+        return ;
+    }
+
+    // If the identifier is not defined, read the code until we encounter an
+    // "$EndIf" or an error
+    while (1) {
+        // Eat the whole line
+        while (Read.WordType() != Read.EndOfLine) {
+            Read.GetNextWord();
+            // If we have come to the end of the file, error!
+            if (Read.WordType() == Read.None) {
+                Error.NoEndToIfDef(Read);
+            }
+        }
+        Read.GetNextWord();
+        // Check for nested $IfDefs or $IfNDefs
+        if (Read.Word() == "$") {
+            Read.GetNextWord();
+            // Recursively call "IfDef"
+            if (Read.Word() == "IFDEF") {
+                IfDef();
+            }
+            // Recursively call "IfNDef"
+            if (Read.Word() == "IFNDEF") {
+                IfNDef();
+            }
+            // If we have "END IF", exit the directive
+            if (Read.Word() == "END") {
+                Read.GetNextWord();
+                if (Read.Word() == "IF") {
+                    Data.ExitDirective();
+                    break;
+                }
+            }
+
+            // If we have "ENDIF", exit the directive
+            if (Read.Word() == "ENDIF") {
+                Data.ExitDirective();
+                break;
+            }
+        }
+    }
+    Read.GetNextWord();
+    return ;
+}
+
+
+// IfNDef() compiles the code if the following identifier is not defined
+// Example:
+//   $IfNDef Windows
+//     ' Code
+//   $End If
+void Compiler::IfNDef() {
+    // If the identifier isn't defined, then enter a new level and return to
+    // compiling the rest of the code
+    Read.GetNextWord();
+    if (!Data.IsDefined(Read.Word())) {
+        Data.EnterDirective();
+        Read.GetNextWord();
+        return ;
+    }
+
+    // Loop until we encounter an "$End If" or an error
+    while (1) {
+        // Eat all lines, no sense in processing or compiling
+        while (Read.WordType() != Read.EndOfLine) {
+            Read.GetNextWord();
+            // If we reach an end of the file before "$End If", report an error
+            if (Read.WordType() == Read.None) {
+                Error.NoEndToIfDef(Read);
+            }
+        }
+
+        // Check if the first word on the next line is a $
+        Read.GetNextWord();
+        if (Read.Word() == "$") {
+            Read.GetNextWord();
+            // If we have an "$IfDef", handle it before nested statements
+            if (Read.Word() == "IFDEF") {
+                IfDef();
+            }
+            // If we have an "$IfNDef", handle it before nested statements
+            if (Read.Word() == "IFNDEF") {
+                IfNDef();
+            }
+            // If we have an "$End If", exit the directive and return
+            if (Read.Word() == "END") {
+                Read.GetNextWord();
+                if (Read.Word() == "IF") {
+                    Data.ExitDirective();
+                    break;
+                }
+            }
+
+            // If we have an "ENDIF", exit the directive and return
+            if (Read.Word() == "ENDIF") {
+                Data.ExitDirective();
+                break;
+            }
+        }
+    }
+    Read.GetNextWord();
+    return ;
+}
+
+
+// Const() is called when we need to apply constness to an identifier so that
+// it returns a constant value
+// Examples:
+//   $Const WM_DESTROY = 2
+//   $Const US = "United States"
+void Compiler::Const() {
+    std::string Name;
+    std::string ConstData;
+    Read.GetNextWord();
+    Name = Read.Word();
+    // If the constant identifier is not in the database, report an error
+    if (Read.WordType() != Read.Identifier) {
+        if (Read.WordType() == Read.None or Read.WordType() == Read.EndOfLine) {
+            Error.ExpectedNameAfterDIM(Read);
+        }
+        Error.BadName(Read);
+    }
+    if (Data.AlreadyExistsInScope(Name)) {
+        Error.AlreadyReserved(Read);
+    }
+    Read.GetNextWord();
+
+    // Check for the assignment operator
+    if (Read.Word() != "=") {
+        Error.ExpectedAssignment(Read);
+    }
+
+    // Get the constant value
+    Read.GetNextWord();
+    ConstData = Read.Word();
+    // Check for a negative number
+    if (Read.Word() == "-") {
+        Read.GetNextWord();
+        // This compiler can only negate numbers
+        if (Read.WordType() != Read.Number) {
+            Error.CanOnlyNegateNumbers(Read);
+        }
+        // Add the number to the constant value
+        ConstData += Read.Word();
+    }
+
+    // If we have numberic or string constant data, add it to the database
+    if (Read.WordType() == Read.Number or Read.WordType() == Read.String) {
+        Read.AddConstData(Name, Read.Word(), Read.WordType());
+        Read.GetNextWord();
+        return ;
+    }
+
+    // If the type was not valid for constness, report an error
+    Error.ConstDataMustBeNumberOrString(Read);
+    return ;
+}
+
+
+// MangleNames() minifies the code
+void Compiler::MangleNames() {
+    Read.GetNextWord();
+    // Turn Mangle on or off
+    if (Read.Word() == "ON") {
+        Mangle = true;
+        return ;
+    }
+    if (Read.Word() == "OFF") {
+        Mangle = false;
+        return ;
+    }
+    Error.ExpectedOnOrOff(Read);
+    return ;
+}
+
+
+// PrepareProgram() determines the type of program to run, whether or not to
+// optimize, and builds the core of the program
+void Compiler::PrepareProgram() {
+    // Define either Windows or Linux so the user can tell what type of OS 
+    // the source code is being compiled on
+    #ifdef Windows
+    Data.AddDefine("WINDOWS");
+    #endif
+    // #ifdef Linux
+    // Data.AddDefine("LINUX");
+    // #endif
+
+    // Get the AppType and Optimize directives
+    bool BuiltProgram = false;
+    while (Read.Word() == "$" and !BuiltProgram) {
+        Read.GetNextWord();
+        // If we have $AppType or $Optimize, get more directives
+        if (Read.Word() == "APPTYPE" or Read.Word() == "OPTIMIZE") {
+            FirstDirectives(Read.Word());
+        }
+        // Build the app with default settings
+        else {
+            // Write the assembly skeleton for the app
+            Asm.BuildSkeleton();
+
+            // Prepare error messages
+            Asm.PrepareErrorMessages();
+
+            // Initialize the memory management routines
+            Asm.InitMemory();
+
+            // Deal with the current directive
+            Directives(Read.Word());
+            BuiltProgram = true;
+        }
+        // Check for a new line after each command
+        if (Read.WordType() != Read.EndOfLine) {
+            Error.EndOfLine(Read);
+        }
+        Read.GetNextWord();
+        // No sense in analyzing new lines, just skip past them
+        while (Read.WordType() != Read.EndOfLine) {
+            Read.GetNextWord();
+        }
+    }
+
+    // If we exit the $ loop without having a directive, we still need to build
+    // the app
+    if (BuiltProgram == false) {
+        Asm.BuildSkeleton();
+        Asm.PrepareErrorMessages();
+        Asm.InitMemory();
+    }
+
+    // If this is a console or GUI app, prepare pre-set variables:
+    // CommandLine$ and HInstance
+    if (AppType == Console or AppType == GUI) {
+        Asm.GetPreSetVariables();
+        // Also, is this is a console app, intialize the console
+        if (AppType == Console) {
+            Asm.InitConsole();
+        }
+    }
+
+    // Add a define for the user so they know what type of app we are building
+    if (AppType == Console) {
+        Data.AddDefine("COSNOLE");
+    }
+    if (AppType == GUI) {
+        Data.AddDefine("GUI");
+    }
+    if (AppType == DLL) {
+        Data.AddDefine("DLL");
+    }
+    return ;
+}
 
 
 
