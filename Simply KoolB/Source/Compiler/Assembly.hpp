@@ -93,7 +93,7 @@ void Assembly::FinishUp() {
     // If Windows OS is not generating a DLL, then we need to destroy the heap.
     AddLibrary("HeapDestroy");
     if (AppType == Console or AppType == GUI) {
-      Write.Line(Write.ToFinishUp, "stdcall HeapDestroy,dword[HandleToHeap]");
+        Write.Line(Write.ToFinishUp, "stdcall HeapDestroy,dword[HandleToHeap]");
     }
 
     // Undo command line reservation from BuildSkeleton()
@@ -105,17 +105,17 @@ void Assembly::FinishUp() {
 
     // Return the status
     if (AppType == Console or AppType == GUI) {
-      Write.Line(Write.ToFinishUp, "MOV EAX,dword[ExitStatus]");
-      Write.Line(Write.ToFinishUp, "stdcall ExitProcess,dword[ExitStatus]");
-      Write.Line(Write.ToFinishUp, "RET");
+        Write.Line(Write.ToFinishUp, "MOV EAX,dword[ExitStatus]");
+        Write.Line(Write.ToFinishUp, "stdcall ExitProcess,dword[ExitStatus]");
+        Write.Line(Write.ToFinishUp, "RET");
     }
 
     // If this is a DLL, something went wrong. Exit immediately.
     if (AppType == DLL) {
-      Write.Line(Write.ToFinishUp, "MOV EAX,1");
+        Write.Line(Write.ToFinishUp, "MOV EAX,1");
 
-      // Return 12 to POP the 3 parameters off the stack
-      Write.Line(Write.ToFinishUp, "RET 12");
+        // Return 12 to POP the 3 parameters off the stack
+        Write.Line(Write.ToFinishUp, "RET 12");
     }
   #endif
 

@@ -28,6 +28,11 @@
   Writing Write;
 #include "Assembly.hpp"
   Assembly Asm;
+#include "Compiler.hpp"
+  Compiler CompileIt;
+#include "Errors.hpp"
+  Errors Error;
+
 
 // Configure program settings
 enum OS{Windows, Linux};
