@@ -3177,7 +3177,7 @@ void Compiler::PrepareProgram() {
 
     // If we exit the $ loop without having a directive, we still need to build
     // the app
-    if (BuiltProgram == false) {
+    if (!BuiltProgram) {
         Asm.BuildSkeleton();
         Asm.PrepareErrorMessages();
         Asm.InitMemory();

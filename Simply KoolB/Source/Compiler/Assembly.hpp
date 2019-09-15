@@ -63,10 +63,12 @@ public:
     void CalculateAddition();
     void CalculateSubtract();
     void CalculateEnd();
+
     void CompareNumbers();
     void LoadNumberRelation(int Relation);
     void CompareStrings();
     void LoadStringRelation(int Relation);
+
     void PushNumber(int Number);
     void PushAddress(std::string Name, int Type);
 
@@ -950,39 +952,849 @@ void Assembly::LoadDefaults(int Type) {
 }
 
 
+// AllocMemory() gets some memory to store something in
+void Assembly::AllocMemory(int Section, std::string Size) {
+    // Call HeapAlloc from the Windows API to get memory from the heap
+    #ifdef Windows
+        std::string MemoryOKLabel = GetLabel();
+        AddLibrary("HeapAlloc");
+
+        // If this is a GUI or Console program, call memory from the heap
+        if (AppType == GUI or AppType == Console) {
+            Write.Line(Section, "stdcall HeapAlloc,dword[HandleToHeap],8," + Size);
+        }
+
+        // If this is a DLL, call the heap and use it to allocate memory
+        if (AppType == DLL) {
+            AddLibrary("GetProcessHeap");
+            Write.Line(Section, "CALL GetProcessHeap");
+            Write.Line(Section, "stdcall HeapAlloc,EAX,8," + Size);
+        }
+
+        // Jump to error if we did not get the memory
+        Write.Line(Section, "CMP EAX,0");
+        Write.Line(Section, "JNE " + MemoryOKLabel);
+        Write.Line(Section, "JMP NoMemory");
+        PostLabel(Section,    MemoryOKLabel);
+    #endif
+
+    // For Linux: Get the memory from the system using malloc
+    // #ifdef Linux
+    //     std::string MemoryOKLabel = GetLabel();
+    //     AddLibrary("malloc");     // Gets memory from the system
+    //     Write.Line(Section, "ccall malloc," + Size);
+    //     Write.Line(Section, "CMP EAX,0");
+    //     Write.Line(Section, "JNE " + MemoryOKLabel);
+    //     Write.Line(Section, "JMP NoMemory");
+    //     PostLabel(Section,    MemoryOKLabel);
+    // #endif
+    return ;
+}
+
+
+// FreeMemory() frees the memory when it is no longer needed
+void Assembly::FreeMemory(int Section, std::string Name) {
+    // HeapFree from the Windows API releases the memory back to the heap
+    #ifdef Windows
+        AddLibrary("HeapFree");
+        // GUI or Console apps use the heap we created earlier
+        if (AppType == GUI or AppType == Console) {
+            Write.Line(Section, "stdcall HeapFree,dword[HandleToHeap],0," + Name);
+        }
+        // DLLs use the calling program's heap
+        if (AppType == DLL) {
+            AddLibrary("GetProcessHeap");
+            Write.Line(Section, "CALL GetProcessHeap");
+            Write.Line(Section, "stdcall HeapFree,EAX,0," + Name);
+        }
+    #endif
+    // Under Linux, we release the memory directly back to the system
+    // #ifdef Linux
+    //     AddLibrary("free");     // Release memory back to the system
+    //     Write.Line(Section, "ccall free," + Name);
+    // #endif
+    return ;
+}
+
+
+// AllocStringArray() helps initialize a string array with empty strings
+void Assembly::AllocStringArray(std::string AsmName) {
+    // Get start and end points of the array
+    std::string StartLabel = GetLabel();
+    std::string EndLabel = GetLabel();
+
+    // Start with the first array item
+    Write.Line(Write.ToMain,     "MOV EBX,1");
+    PostLabel(Write.ToMain,      StartLabel);
+
+    // Create an empty string
+    AllocMemory(Write.ToMain,    "1");
+
+    // Get the address to store the string in
+    Write.Line(Write.ToMain,     "MOV ECX,dword[" + AsmName + "]");
+
+    // Store the address of the string in the array
+    Write.Line(Write.ToMain,     "MOV dword[ECX+EBX*4],EAX");
+
+    // Add a null-terimator to the end of the string
+    Write.Line(Write.ToMain,     "MOV byte[EAX],0");
+
+    // Advance to the next array item
+    Write.Line(Write.ToMain,     "INC EBX");
+
+    // Do a bounds check before looping back into the array
+    Write.Line(Write.ToMain,     "CMP EBX,dword[" + AsmName + "_Size]");
+    Write.Line(Write.ToMain,     "JLE " + StartLabel);
+    PostLabel(Write.ToMain,      EndLabel);
+    return ;
+}
+
+
+// FreeStringArray() frees all the strings in an array
+void Assembly::FreeStringArray(std::string AsmName) {
+    // Get start and end points of the array
+    std::string StartLabel = GetLabel();
+    std::string EndLabel = GetLabel();
+
+    // Start with the first string (item) in the array
+    Write.Line(Write.ToFinishUp,     "MOV EBX,1");
+    PostLabel(Write.ToFinishUp,      StartLabel);
+
+    // Get the address of the array
+    Write.Line(Write.ToFinishUp,     "MOV ECX,dword[" + AsmName + "]");
+
+    // Get the address of the array item by incrementing the address of the
+    // the address of the array up 4 bytes
+    Write.Line(Write.ToFinishUp,     "MOV EAX,dword[ECX+EBX*4]");
+
+    // Free the string at the current array index
+    FreeMemory(Write.ToFinishUp,     "EAX");
+
+    // Go to the next index of the array
+    Write.Line(Write.ToFinishUp,     "INC EBX");
+
+    // Bounds check. Compare the current index to the size
+    Write.Line(Write.ToFinishUp,     "CMP EBX,dword[" + AsmName + "_Size]");
+
+    // If we are in bounds, and have not encountered a null-terminator, then
+    // we can continue
+    Write.Line(Write.ToFinishUp,     "JLE " + StartLabel);
+    PostLabel(Write.ToFinishUp,      EndLabel);
+
+    // Free the array from memory
+    FreeMemory(Write.ToFinishUp,     "dword[" + AsmName + "]");
+    return ;
+}
+
+
+// CopyArray() copies an array and all of its contents into another array
+void Assembly::CopyArray(std::string Array) {
+    // Get the address off the array size and store it in the ESI register
+    Write.Line(Write.ToMain,         "MOV ESI,dword[" + Data.Asm(Array) + "_Size]");
+
+    // If we have an array of doubles, the size of an item is 8 bytes
+    // Note:
+    // ESI is a Source index register, used for string and memory array copying
+    if (Data.GetArrayData(Array).Type == Data.Double) {
+        Write.Line(Write.ToMain,     "MOV EAX,8");
+    }
+
+    // Arrays of integers and doubles are 4 bytes per item
+    if (Data.GetArrayData(Array).Type == Data.Integer or Data.GetArrayData(Array).Type == Data.String) {
+        Write.Line(Write.ToMain,     "MOV EAX,4");        
+    }
+
+    // Calculate total array size (item_size * array_size)
+    Write.Line(Write.ToMain,         "MUL ESI");
+    Write.Line(Write.ToMain,         "MOV EBX,EAX");
+
+    // Allocate memory for the new array
+    AllocMemory(Write.ToMain,        "EBX");
+
+    // For an array of strings, copy each string into the new array
+    if (Data.GetArrayData(Array).Type == Data.String) {
+        CopyStringArray(Array);
+    }
+
+    // For numeric types, copy memory into the new the array
+    else {
+        Write.Line(Write.ToMain,     "MOV EDI,EAX");
+        CopyMemoryOfSize("EDI", "dword[" + Data.Asm(Array) + "]", "EBX");
+    }
+
+    // Push the new array and array size onto stack
+    Write.Line(Write.ToMain,         "PUSH EDI");
+    Write.Line(Write.ToMain,         "PUSH dword[" + Data.Asm(Array) + "_Size]");
+    return ;
+}
+
+
+// CopyStringArray() helps copy an array of strings 
+void Assembly::CopyStringArray(std::string Array) {
+    // Get start and end points of the array
+    std::string StartLabel = GetLabel();
+    std::string EndLabel     = GetLabel();
+
+    // Set EBX to zero so we can use it as a counter
+    Write.Line(Write.ToMain,    "MOV EBX,0");
+
+    // The EDI register contains our duplicate array to be filled
+    Write.Line(Write.ToMain,    "MOV EDI,EAX");
+
+    // Start the loop
+    PostLabel(Write.ToMain,        StartLabel);
+
+    // Get the address of the original array
+    Write.Line(Write.ToMain,     "MOV ECX,dword[" + Data.Asm(Array) + "]");
+
+    // Get the address of the string in the original array
+    Write.Line(Write.ToMain,     "MOV EAX,dword[ECX+EBX*4]");
+
+    // Get the current string length
+    GetStringLength("EAX");
+
+    // Allocate memory for the current string
+    AllocMemory(Write.ToMain,    "ESI");
+
+    // Move the address of the newly allocated memory into the new array
+    Write.Line(Write.ToMain,     "MOV dword[EDI+EBX*4],EAX");
+
+    // Get the address of the original array, again
+    Write.Line(Write.ToMain,     "MOV ECX,dword[" + Data.Asm(Array) + "]");
+
+    // Get the address of the item in the original array, again
+    Write.Line(Write.ToMain,     "MOV ECX,dword[ECX+EBX*4]");
+
+    // Copy the string from the original array to the newly allocated memory
+    CopyMemoryOfSize("EAX", "ECX", "ESI");
+
+    // Go onto the next array item
+    Write.Line(Write.ToMain,     "INC EBX");
+
+    // Out of bounds check. Terminates the loop before going out of bounds
+    Write.Line(Write.ToMain,     "CMP EBX,dword[" + Data.Asm(Array) + "_Size]");
+    Write.Line(Write.ToMain,     "JLE " + StartLabel);
+    PostLabel(Write.ToMain,        EndLabel);
+    return ;
+}
+
+
+// AddStrings() concatenates two strings into a single string
+void Assembly::AddStrings() {
+    // Get the address of the first string
+    Write.Line(Write.ToMain,    "POP ESI");
+
+    // Get the address of the first string's length
+    GetStringLength("ESI");
+    Write.Line(Write.ToMain,    "MOV EDI,EAX");
+
+    // Get the address of the second string
+    Write.Line(Write.ToMain,    "POP EBX");
+
+    // Get the address of the second string's length
+    GetStringLength("EBX");
+
+    // Concatenate the strings
+    Write.Line(Write.ToMain,    "ADD EAX,EDI");
+
+    // Since we have two null-terminators, we can safely remove one
+    Write.Line(Write.ToMain,    "DEC EAX");
+
+    // Allocate memory for the new string to be stored
+    AllocMemory(Write.ToMain,   "EAX");
+
+    // Copy the first string to the memory allocated for the new string
+    CopyString("EAX", "EBX");
+
+    // Append the second string to the memory allocated for the new string
+    AppendString("EAX", "ESI");
+
+    // Push the new string to the stack
+    Write.Line(Write.ToMain,    "PUSH EAX");
+
+    // Free the two strings we concatenated
+    FreeMemory(Write.ToMain,    "EBX");
+    FreeMemory(Write.ToMain,    "ESI");
+    return ;
+}
+
+
+// GetStringLength() gets the length of a string
+void Assembly::GetStringLength(std::string String) {
+    // Import lstrlenA from Windows API
+    #ifdef Windows
+        AddLibrary("lstrlenA");
+        Write.Line(Write.ToMain, "stdcall lstrlenA," + String);
+
+        // Increment EAX to leave space for a null-terminator
+        Write.Line(Write.ToMain, "INC EAX");
+    #endif
+    // #ifdef Linux
+    //     AddLibrary("strlen");         // Returns the length of a string
+    //     Write.Line(Write.ToMain, "ccall strlen," + String);
+    //     // Add room for the null terminator
+    //     Write.Line(Write.ToMain, "INC EAX");
+    // #endif
+    return ;
+}
+
+
+// CopyUDT() copies a UDT (BUG: string values are not copied, but reflected)
+void Assembly::CopyUDT(std::string UDT) {
+    // Get the address of the UDT and the UDT size that we want to copy
+    Write.Line(Write.ToMain,  "MOV EDI," + Data.Asm(Data.GetUDTData(UDT).TypeName) + "_size");
+
+    // Allocate enough memory to store the new UDT
+    AllocMemory(Write.ToMain, "EDI");
+
+    // Copy the original UDT into the new UDT
+    Write.Line(Write.ToMain,  "MOV EBX,EAX");
+
+    // Copy the original UDT size into the new UDT size
+    CopyMemoryOfSize("EBX", "" + Data.Asm(UDT), "EDI");
+
+    // Push the new UDT to the stack
+    Write.Line(Write.ToMain,  "PUSH EBX");
+    return ;
+}
+
+
+// CopyMemoryOfSize() copies one memory block to another memory block
+void Assembly::CopyMemoryOfSize(std::string To, std::string From, std::string Size) {
+    #ifdef Windows
+        // Windows API function to copy memory
+        AddLibrary("RtlMoveMemory");
+        Write.Line(Write.ToMain, "stdcall RtlMoveMemory," + To + "," + From + "," + Size);
+        return ;
+    #endif
+    // #ifdef Linux
+    //     AddLibrary("memcpy"); // Copies memory
+    //     Write.Line(Write.ToMain, "ccall memcpy," + To + "," + From + "," + Size);
+    //     return ;
+    // #endif
+    return ;
+}
+
+
+// CopyString() imports a library function to copy a string
+void Assembly::CopyString(std::string To, std::string From) {
+    // Windows API function to copy a string
+    #ifdef Windows
+        AddLibrary("lstrcpyA");
+        Write.Line(Write.ToMain, "stdcall lstrcpyA,"+ To + "," + From);
+        return ;
+    #endif
+    // #ifdef Linux
+    //     AddLibrary("strcpy");
+    //     Write.Line(Write.ToMain, "ccall strcpy,"+ To + "," + From);
+    //     return ;
+    // #endif
+}
+
+
+// AppendString() imports a library function to concatenate two strings
+void Assembly::AppendString(std::string To, std::string From) {
+    // Windows API function to concatenate two strings
+    #ifdef Windows
+        AddLibrary("lstrcatA");
+        Write.Line(Write.ToMain, "stdcall lstrcatA,"+ To + "," + From);
+        return ;
+    #endif
+    // #ifdef Linux
+    //     AddLibrary("strcat");
+    //     Write.Line(Write.ToMain, "ccall strcat,"+ To + "," + From);
+    //     return ;
+    // #endif
+}
+
+
+// AssignIt() assigns a variable the result of an expression
+void Assembly::AssignIt(std::string Name) {
+    // Case where the compiler is assigning a array
+    if (Data.GetDataType(Name) == Data.Array) {
+        // Pop the array and array size from the stack
+        Write.Line(Write.ToMain, "POP EBX");
+        Write.Line(Write.ToMain, "POP ESI");
+
+        // Store the array and array size
+        Write.Line(Write.ToMain, "MOV dword[" + Data.Asm(Name) + "],ESI");
+        Write.Line(Write.ToMain, "MOV dword[" + Data.Asm(Name) + "_Size],EBX");
+    }
+
+    // Case where the compiler is assigning a User-Defined Type
+    if (Data.GetDataType(Name) == Data.UDT) {
+        // Pop the UDT from the stack
+        Write.Line(Write.ToMain, "POP EBX");
+
+        // Copy the UDT, its size, and its members over
+        CopyMemoryOfSize("dword[" + Data.Asm(Name) + "]", "EBX", 
+                          Data.Asm(Data.GetUDTData(Name).TypeName) + "_size");
+
+        // Free the UDT from memory
+        FreeMemory(Write.ToMain, "EBX");
+    }
+
+    // Case where the compiler is assigning a string
+    if (Data.GetDataType(Name) == Data.String) {
+        // Pop the string from the stack
+        Write.Line(Write.ToMain, "POP EBX");
+
+        // Free the original string from memory
+        FreeMemory(Write.ToMain, "dword[" + Data.Asm(Name) + "]");
+
+        // Store the new string
+        Write.Line(Write.ToMain, "MOV dword[" + Data.Asm(Name) + "],EBX");
+        return ;
+    }
+
+    // Case where the compiler is assigning a numeric type
+    if (Data.GetDataType(Name) == Data.Number) {
+        // If the numeric type is double
+        if (Data.GetSimpleData(Name).Type == Data.Double) {
+            // Pop the double off the stack
+            Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+            Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+            // Initialize the FPU
+            Write.Line(Write.ToMain, "FINIT");
+
+            // Load the double
+            Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+            // Then store it in the variable
+            Write.Line(Write.ToMain, "FST qword[" + Data.Asm(Name) + "]");
+        }
+
+        // If the numeric type is integer
+        if (Data.GetSimpleData(Name).Type == Data.Integer) {
+            // Round the number to an integer
+            RoundToInteger();
+
+            // Pop the integer off the stack
+            Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+
+            // Initialize the FPU
+            Write.Line(Write.ToMain, "FINIT");    
+
+            // Load the integer as a double
+            Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
+
+            // Store the double
+            Write.Line(Write.ToMain, "FIST dword[" + Data.Asm(Name) + "]");
+        }
+    }
+    return ;
+}
+
+
+// AssignUDTMember() assigns a member variable to a User-Defined Type
+void Assembly::AssignUDTMember(std::string UDT, std::string TypeName,
+                               std::string Member, int Type) {
+    // Get the assembly language name of the member variable
+    std::string MemberAsmName = Data.GetUDTData(UDT).Type.Members[Member].AsmName;
+
+    // Case where the member variable is a string
+    if (Type == Data.String) {
+        // Free the original string from memory
+        FreeMemory(Write.ToMain, "dword["+Data.Asm(UDT)+"+"+Data.Asm(TypeName)+"."+MemberAsmName+"]");
+
+        // Get the new string
+        Write.Line(Write.ToMain, "POP ESI");
+
+        // Store the string in the UDT
+        Write.Line(Write.ToMain, "MOV dword["+Data.Asm(UDT)+"+"+Data.Asm(TypeName)+"."+MemberAsmName+"],ESI");
+    }
+
+    // Case where the member variable is a double
+    if (Type == Data.Double) {
+        // Store the double in the UDT
+        Write.Line(Write.ToMain, "POP dword["+Data.Asm(UDT)+"+"+Data.Asm(TypeName)+"."+MemberAsmName+"]");
+        Write.Line(Write.ToMain, "POP dword["+Data.Asm(UDT)+"+"+Data.Asm(TypeName)+"."+MemberAsmName+"+4]");
+    }
+
+    // Case where the member variable is an integer
+    if (Type == Data.Integer) {
+        // Round the number on the stack to an integer
+        RoundToInteger();
+
+        // Pop the integer off the stack
+        Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+
+        // Initialize the FPU
+        Write.Line(Write.ToMain, "FINIT"); 
+
+        // Load the integer as a double
+        Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
+
+        // And store the double
+        Write.Line(Write.ToMain, "FIST dword["+Data.Asm(UDT)+"+"+Data.Asm(TypeName)+"."+MemberAsmName+"]");
+    }
+    return ;
+}
+
+
+// AssignArrayItem() assigns an item to an array
+void Assembly::AssignArrayItem(std::string Array, int Type) {
+    // Label for Out Of Bounds Error
+    std::string OutOfBoundsLabel = GetLabel();
+
+    // Case where we pop a string off of the stack
+    if (Type == Data.String) {
+        Write.Line(Write.ToMain, "POP ESI");
+    }
+
+    // Case where we pop a numeric type off of the stack
+    if (Type == Data.Double or Type == Data.Integer) {
+        Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+        Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+    }
+
+    // Round the array index to an integer
+    RoundToInteger();
+
+    // Get the array index that we are assigning a variable to
+    Write.Line(Write.ToMain,     "POP EBX");
+
+    // If the index is out of bounds, report an error
+    Write.Line(Write.ToMain,     "CMP EBX,dword[" + Data.Asm(Array) + "_Size]");
+    Write.Line(Write.ToMain,     "JGE " + OutOfBoundsLabel);
+    Write.Line(Write.ToMain,     "CMP EBX,0");
+    Write.Line(Write.ToMain,     "JLE " + OutOfBoundsLabel);
+
+    // Case where the array item being assigned is a string
+    if (Type == Data.String) {
+        // Get the address of the array
+        Write.Line(Write.ToMain, "MOV EDI,dword[" + Data.Asm(Array) + "]");
+
+        // Free the old string from memory
+        FreeMemory(Write.ToMain, "dword[EDI+EBX*4]");
+
+        // Store the string at the array indexy
+        Write.Line(Write.ToMain, "MOV dword[EDI+EBX*4],ESI");
+    }
+
+    // Case where the array item being assigned is a double
+    if (Type == Data.Double) {
+        // Get the address of the array
+        Write.Line(Write.ToMain, "MOV EDI,dword[" + Data.Asm(Array) + "]");
+
+        // Initialize the FPU
+        Write.Line(Write.ToMain, "FINIT");
+
+        // Load the double
+        Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+        // Store the double at the array index
+        Write.Line(Write.ToMain, "FST qword[EDI+EBX*8]");
+    }
+
+    // Case where the array item being assigned is an integer
+    if (Type == Data.Integer) {
+        // Push the number to the stack
+        Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
+        Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+
+        // Round the number on the stack to an integer
+        RoundToInteger();
+
+        // Pop the integer off the stack
+        Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+
+        // Initialize the FPU
+        Write.Line(Write.ToMain, "FINIT");
+
+        // Load the integer as a double (floating-point)
+        Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
+
+        // Store the double at the array index
+        Write.Line(Write.ToMain, "FIST dword[EDI+EBX*4]");
+    }
+
+    // Report any errors that occurred
+    PostLabel(Write.ToMain, OutOfBoundsLabel);
+    return ;
+}
+
+
+// CalculateStart() is called at the beginning of a binary operation on doubles
+void Assembly::CalculateStart() {
+    // Pop the first double from the stack and store it
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Pop the second double from the stack and store it
+    Write.Line(Write.ToMain, "POP dword[TempQWord2]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord2+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the two doubles
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+    Write.Line(Write.ToMain, "FLD qword[TempQWord2]");
+    return ;
+}
+
+
+// CalculateExp() raises on double to the power of another double
+void Assembly::CalculateExp() {
+    CalculateStart();
+
+    // Import external library function for computing powers
+    AddLibrary("pow");
+    Write.Line(Write.ToMain, "ccall pow,dword[TempQWord2],dword[TempQWord2+4],"
+                                      "dword[TempQWord1],dword[TempQWord1+4]");
+    CalculateEnd();
+    return ;
+}
+
+
+// CalculateMultiply() computes the product of two doubles in the FPU
+void Assembly::CalculateMultiply() {
+    CalculateStart();
+
+    // Multiply the two floats together
+    Write.Line(Write.ToMain, "FMUL ST0,ST1");
+    CalculateEnd();
+    return ;
+}
+
+
+// CalculateDivide() computers the quotient of two doubles in the FPU
+void Assembly::CalculateDivide() {
+    CalculateStart();
+
+    // Divide the two floats
+    Write.Line(Write.ToMain, "FDIV ST0,ST1");
+    CalculateEnd();
+    return ;
+}
+
+
+// CalculateMOD() applies the fractional modulus operator to two doubles.
+void Assembly::CalculateMOD() {
+    CalculateStart();
+
+    // Import external library function
+    AddLibrary("fmod");
+    Write.Line(Write.ToMain, "ccall fmod,dword[TempQWord2],dword[TempQWord2+4],"
+                                                     "dword[TempQWord1],dword[TempQWord1+4]");
+    CalculateEnd();
+    return ;
+}
+
+
+// CalculateAddition() computes the sum of two doubles in the FPU
+void Assembly::CalculateAddition() {
+    CalculateStart();
+
+    // Add the two floating-point numbers
+    Write.Line(Write.ToMain, "FADD ST0,ST1");
+    CalculateEnd();
+    return ;
+}
+
+
+// CalculateSubtract() computes the difference between two doubles in the FPU
+void Assembly::CalculateSubtract() {
+    CalculateStart();
+
+    // Subtract ST1 from ST0
+    Write.Line(Write.ToMain, "FSUB ST0,ST1");
+    CalculateEnd();
+    return ;
+}
+
+
+// CalculateEnd() pushes the result of a calculation to the stack
+void Assembly::CalculateEnd() {
+    Write.Line(Write.ToMain, "MOV EAX,dword[TempQWord1]");
+    Write.Line(Write.ToMain, "FST qword[TempQWord1]");
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    return ;
+}
+
+
+// CompareNumbers() Compare two numbers
+void Assembly::CompareNumbers() {
+    CalculateStart();
+
+    // Compare the two numbers
+    Write.Line(Write.ToMain, "FCOM ST1");
+
+    // Store the status word in the AX register
+    Write.Line(Write.ToMain, "FSTSW AX");
+
+    // Wait for operation to complete
+    Write.Line(Write.ToMain, "WAIT");
+
+    // Store AX as a flag for use with the normal JMP operators
+    Write.Line(Write.ToMain, "SAHF");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load true as the value value, that is the default value
+    Write.Line(Write.ToMain, "FILD dword[True]");
+
+    return ;
+}
+
+
+// LoadNumberRelation() adds a Jump if command in assembly based after
+// evaluating of the number relation
+void Assembly::LoadNumberRelation(int Relation) {
+    std::string True = GetLabel();
+
+    // JE - Jump if Equal
+    if (Relation == Equal) {
+        Write.Line(Write.ToMain, "JE " + True);
+    }
+
+    // JNE - Jump if Not Equal
+    if (Relation == NotEqual) {
+        Write.Line(Write.ToMain, "JNE " + True);    
+    }
+
+    // JA - Jump if Above
+    if (Relation == Greater) {
+        Write.Line(Write.ToMain, "JA " + True);
+    }
+
+    // JB - Jump if Below
+    if (Relation == Less) {
+        Write.Line(Write.ToMain, "JB " + True);
+    }
+
+    // JAE - Jump if Above or Equal
+    if (Relation == GreaterOrEqual) {
+        Write.Line(Write.ToMain, "JAE " + True);
+    }
+
+    // JBE - Jump if Below or Equal
+    if (Relation == LessOrEqual) {
+        Write.Line(Write.ToMain, "JBE " + True);
+    }
+
+    // Load zero if we did not jump out of the current sequence
+    Write.Line(Write.ToMain,     "FLDZ");
+
+    // Write the result of the comparison in assembly language
+    PostLabel(Write.ToMain,      True);
+
+    // Push the result of the comparison on to the stack
+    CalculateEnd();
+    return ;
+}
+
+
+// CompareStrings() compares two strings 
+void Assembly::CompareStrings() {
+    // Get both strings we need to compare from the stack
+    Write.Line(Write.ToMain, "POP EBX");
+    Write.Line(Write.ToMain, "POP EDI");
+
+    // Import Windows API function lstrcpmA
+    #ifdef Windows
+        AddLibrary("lstrcmpA");
+        Write.Line(Write.ToMain, "stdcall lstrcmpA,EDI,EBX");
+    #endif
+    // If we are using Linux, we will call strcmp
+    // #ifdef Linux
+    //     AddLibrary("strcmp");
+    //     Write.Line(Write.ToMain, "ccall strcmp,EDI,EBX");
+    // #endif
+
+    // Store the return value
+    Write.Line(Write.ToMain, "MOV ESI,EAX");
+
+    // Free the strings we compared
+    FreeMemory(Write.ToMain, "EBX");
+    FreeMemory(Write.ToMain, "EDI");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load true as the default value
+    Write.Line(Write.ToMain, "FILD dword[True]");
+
+    // Compare the the resulting value of the comparison to 0
+    Write.Line(Write.ToMain, "CMP ESI,0");
+
+    return ;
+}
+
+
+// LoadStringRelation() adds a Jump if statement command after evaluating the
+// string relation
+void Assembly::LoadStringRelation(int Relation) {
+    std::string True = GetLabel();
+
+    // JE - Jump if Equal
+    if (Relation == Equal) {
+        Write.Line(Write.ToMain, "JE " + True);
+    }
+
+    // JNE - Jump if NotEqual
+    if (Relation == NotEqual) {
+        Write.Line(Write.ToMain, "JNE " + True);    
+    }
+
+    // JG - Jump if Greater
+    if (Relation == Greater) {
+        Write.Line(Write.ToMain, "JG " + True);
+    }
+
+    // JL - Jump if Less
+    if (Relation == Less) {
+        Write.Line(Write.ToMain, "JL " + True);
+    }
+
+    // JGE - Jump if GreaterOrEqual
+    if (Relation == GreaterOrEqual) {
+        Write.Line(Write.ToMain, "JGE " + True);
+    }
+
+    // JLE - Jump if LessOrEqual
+    if (Relation == LessOrEqual) {
+        Write.Line(Write.ToMain, "JLE " + True);
+    }
+
+    // Load zero if we did not jump out of the current sequence
+    Write.Line(Write.ToMain,     "FLDZ");
+
+    // Write the result of the comparison in assembly language
+    PostLabel(Write.ToMain,      True);
+
+    // Push the result of the comparison on to the stack
+    CalculateEnd();
+    return ;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // TODO:
 // IMPLEMENT 82 functions!! (deleted after implementation)
-// DONE w/: 20
-void AllocMemory(int Section, std::string Size);
-void FreeMemory(int Section, std::string Name);
-void AllocStringArray(std::string AsmName);
-void FreeStringArray(std::string AsmName);
-void CopyArray(std::string Array);
-void CopyStringArray(std::string Array);
-void AddStrings();
-void GetStringLength(std::string String);
-void CopyUDT(std::string UDT);
-void CopyMemoryOfSize(std::string To, std::string From, std::string Size);
-void CopyString(std::string To, std::string From);
-void AppendString(std::string To, std::string From);
-void AssignIt(std::string Name);
-void AssignUDTMember(std::string UDT, std::string TypeName, std::string Member, int Type);
-void AssignArrayItem(std::string Array, int Type);
-
-void CalculateStart();
-void CalculateExp();
-void CalculateMultiply();
-void CalculateDivide();
-void CalculateMOD();
-void CalculateAddition();
-void CalculateSubtract();
-void CalculateEnd();
-void CompareNumbers();
-void LoadNumberRelation(int Relation);
-void CompareStrings();
-void LoadStringRelation(int Relation);
+// DONE w/: 48
 void PushNumber(int Number);
 void PushAddress(std::string Name, int Type);
 
