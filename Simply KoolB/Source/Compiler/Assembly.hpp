@@ -1773,6 +1773,259 @@ void Assembly::LoadStringRelation(int Relation) {
 }
 
 
+// PushNumber() pushes a constant numeric expression to the stack
+void Assembly::PushNumber(int Number) {
+    // Convert the constant numeric expression to a string and store it
+    Write.Line(Write.ToMain, "MOV dword[TempQWord1]," + ToStr(Number));
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the integer as a double
+    Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
+
+    // Store the double
+    Write.Line(Write.ToMain, "FSTP qword[TempQWord1]");
+
+    // Push the double to the stack
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    return ;
+}
+
+
+// PushAddress() pushes the address of a variable to the stack
+void Assembly::PushAddress(std::string Name, int Type) {
+    // Push the address of the numeric expression to the stack
+    if (Type == Data.Number) {
+        // If we are inside a sub or function, then we need its address, which
+        // is located on the stack
+        if (Data.IsInsideSubFunction()) {
+            // Get the assembly language name of the number
+            std::string AsmName = Data.Asm(Name);
+
+            // Find the index of the hyphen
+            int Pos = Data.Asm(Name).find("-", 0);
+            if (Pos != std::string::npos) {
+                // Get the number from the assembly language
+                std::string Temp = AsmName.substr(Pos+1, Name.length());
+
+                // Move the address of EBP
+                Write.Line(Write.ToMain, "MOV EAX,EBP");
+
+                // Subtract this from the EBP address
+                Write.Line(Write.ToMain, "SUB EAX," + Temp);
+                PUSH("EAX");
+            }
+            else {
+            // If there is a parameter, get the index of the "+" character
+            int Pos = Data.Asm(Name).find("+", 0);
+                if (Pos != std::string::npos) {
+                    std::string Temp = AsmName.substr(Pos +1, Name.length());
+                    Write.Line(Write.ToMain, "MOV EAX,EBP");
+                    Write.Line(Write.ToMain, "ADD EAX," + Temp);
+                    PUSH("EAX");
+                }
+                else {
+                    // If an error happened or input was invalid, push a zero
+                    PushNumber(0);
+                }
+            }
+        }
+        else { // If its not a sub or function, then push the name to the stack
+            PUSH(Data.Asm(Name));
+        }
+    }
+    // If the type is a string, push the address to the stack
+    if (Type == Data.String) {
+        PUSH("dword[" + Data.Asm(Name) + "]");
+    }
+    // If the type is a udt, push the address to the stack
+    if (Type == Data.UDT) {
+        PUSH(Data.Asm(Name));
+    }
+    // If the type is a subfunction, push the address to the stack
+    if (Type == Data.SubFunction) {
+        PUSH(Data.Asm(Name));    
+    }
+
+    // Pop the address of the temp variable
+    POP("dword[TempQWord1]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the integer as a double
+    Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
+
+    // Store the double
+    Write.Line(Write.ToMain, "FST qword[TempQWord1]");
+
+    // Push the double to the stack
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    return ;
+}
+
+
+// MOV() copies data from one location to another
+void Assembly::MOV(int Section, std::string WhereTo, std::string What) {
+    Write.Line(Section, "MOV " + WhereTo + "," + What);
+    return ;
+}
+
+
+// PUSH() pushes data to the top of the stack
+void Assembly::PUSH(std::string What) {
+    Write.Line(Write.ToMain, "PUSH " + What);
+    return ;
+}
+
+
+// POP() pops data from the top of the stack
+void Assembly::POP(std::string What) {
+    Write.Line(Write.ToMain, "POP " + What);
+    return ;
+}
+
+
+// RoundToInteger() applies the floor function to a double/floating-point value
+void Assembly::RoundToInteger() {
+    // Add the external library function for floor
+    AddLibrary("floor");
+
+    // Pop the double off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord2]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord2+4]");
+
+    // Apply the floor function to the double
+    Write.Line(Write.ToMain, "ccall floor,dword[TempQWord2],dword[TempQWord2+4]");
+
+    // Store the double as an integer
+    Write.Line(Write.ToMain, "FIST dword[TempQWord2]");
+
+    // Push the integer to the stack
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord2]");
+    return ;
+}
+
+
+// ConvertToString() convert a double to a string
+// Note: The number 3 will be converted '3.', so we must remove the trailing
+// decimal in the case where the number should not have a decimal (ex: 3.14)
+void Assembly::ConvertToString() {
+    // Prepare labels
+    std::string StartLabel = GetLabel();
+    std::string FoundLabel = GetLabel();
+    std::string EndLabel = GetLabel();
+
+    // Pop the double off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Allocate 100 bytes of memory to store 100 characters
+    AllocMemory(Write.ToMain, "100");
+    Write.Line(Write.ToMain, "MOV EBX,EAX");
+
+    // Import _gcvt from the Windows API
+    #ifdef Windows
+        AddLibrary("_gcvt");
+        Write.Line(Write.ToMain, "ccall _gcvt,dword[TempQWord1],"
+                                                         "dword[TempQWord1+4],50,EBX");
+    #endif
+    // Under Linux, call gcvt
+    // #ifdef Linux
+    //     AddLibrary("gcvt");
+    //     Write.Line(Write.ToMain, "ccall gcvt,dword[TempQWord1],"
+    //                                                      "dword[TempQWord1+4],50,EBX");
+    // #endif
+
+    // Get the length of the string
+    GetStringLength("EBX");
+    Write.Line(Write.ToMain, "MOV EDI,EAX");
+
+    // Add a null-terminator to mark the end of the string
+    Write.Line(Write.ToMain, "MOV ECX,0");
+
+    // Remove trailing periods and write the start label
+    PostLabel(Write.ToMain,    StartLabel);
+
+    // Loop until we find the null-terminator or beginning of the string
+    Write.Line(Write.ToMain, "CMP byte[EBX+ECX],0");
+    Write.Line(Write.ToMain, "JE " + FoundLabel);
+    Write.Line(Write.ToMain, "INC ECX");
+    Write.Line(Write.ToMain, "CMP ECX,EDI");
+    Write.Line(Write.ToMain, "JL " + StartLabel);
+    Write.Line(Write.ToMain, "JMP " + EndLabel);
+    PostLabel(Write.ToMain,  FoundLabel);
+
+    // Now that we have found the null-terminator, check for a trailing decimal
+    Write.Line(Write.ToMain, "DEC ECX");
+    Write.Line(Write.ToMain, "CMP byte[EBX+ECX],\'.\'");
+    Write.Line(Write.ToMain, "JNE " + EndLabel);
+
+    // If we do have <number><period><null-terminator>, replace the period with 
+    // a second null-terminator
+    Write.Line(Write.ToMain, "MOV byte[EBX+ECX],0");
+    PostLabel(Write.ToMain,    EndLabel);
+
+    // And return the string
+    Write.Line(Write.ToMain, "PUSH EBX");
+    return ;
+}
+
+
+// ConvertToNumber() converts a string to a number
+void Assembly::ConvertToNumber() {
+    // Import external library function
+    AddLibrary("atof");
+
+    // Pop the string from the stack
+    Write.Line(Write.ToMain, "POP EBX");
+
+    // Convert the string to the number
+    Write.Line(Write.ToMain, "ccall atof,EBX");
+
+    // Free the string from memory
+    FreeMemory(Write.ToMain, "EBX");
+
+    // Store the floating-point number
+    Write.Line(Write.ToMain, "FST qword[TempQWord1]");
+
+    // Push the floating-point (double) to the stack
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    return ;
+}
+
+
+// Negate() assigns a number the oposite parity.
+void Assembly::Negate() {
+    // Pop the double off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the double
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+    // Change the parity
+    Write.Line(Write.ToMain, "FCHS");
+
+    // Store the double
+    Write.Line(Write.ToMain, "FST qword[TempQWord1]");
+
+    // Push the double to the stack
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]"); 
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    return ;
+}
+
+
+
+
 
 
 
@@ -1794,19 +2047,7 @@ void Assembly::LoadStringRelation(int Relation) {
 
 // TODO:
 // IMPLEMENT 82 functions!! (deleted after implementation)
-// DONE w/: 48
-void PushNumber(int Number);
-void PushAddress(std::string Name, int Type);
-
-void MOV(int Section, std::string WhereTo, std::string What);
-void PUSH(std::string What);
-void POP(std::string What);
-
-void RoundToInteger();
-void ConvertToString();
-void ConvertToNumber();
-void Negate();
-
+// DONE w/: 51
 void InitConsole();
 void ConsoleSleep();
 void FormatTime();
