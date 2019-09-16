@@ -99,6 +99,7 @@ public:
     std::string ElseIf(std::string EndLabel, std::string DoneIf);
     std::string Else(std::string EndLabel, std::string DoneIf);
     void EndIf(std::string EndLabel, std::string DoneIf);
+
     std::string PrepareWhile();
     std::string StartWhile();
     void StopWhile(std::string StartWhileLabel, std::string EndWhileLabel);
@@ -106,16 +107,20 @@ public:
     void CreateSubFunction(std::string Name, bool External);
     void EndCreateSubFunction(std::string Name, bool External);
     void InvokeSubFunction(std::string Name);
+
     void ReturnValue(std::string Name, std::string Type);
     void CleanUpReturnValue(std::string Name, std::string Type);
     void PushReturnValue(std::string Name, std::string Type);
+
     void LoadExternalSubFunction(std::string Name);
     void CallExternalSubFunction(std::string Name);
+
     void AllocateParameterPool(int Size);
     void AddToParameterPool(int Type, int Where);
     void PushParameterPool(int Type, int Where);
     void FreeParameterPool();
     void Callback(std::string Name);
+
     void AdjustStack(int Size);
     void OptimizeSubFunctions();
 
@@ -1374,7 +1379,7 @@ void Assembly::AssignIt(std::string Name) {
             Write.Line(Write.ToMain, "POP dword[TempQWord1]");
 
             // Initialize the FPU
-            Write.Line(Write.ToMain, "FINIT");    
+            Write.Line(Write.ToMain, "FINIT");   
 
             // Load the integer as a double
             Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
@@ -1421,7 +1426,7 @@ void Assembly::AssignUDTMember(std::string UDT, std::string TypeName,
         Write.Line(Write.ToMain, "POP dword[TempQWord1]");
 
         // Initialize the FPU
-        Write.Line(Write.ToMain, "FINIT"); 
+        Write.Line(Write.ToMain, "FINIT");
 
         // Load the integer as a double
         Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
@@ -1654,7 +1659,7 @@ void Assembly::LoadNumberRelation(int Relation) {
 
     // JNE - Jump if Not Equal
     if (Relation == NotEqual) {
-        Write.Line(Write.ToMain, "JNE " + True);    
+        Write.Line(Write.ToMain, "JNE " + True);   
     }
 
     // JA - Jump if Above
@@ -1738,7 +1743,7 @@ void Assembly::LoadStringRelation(int Relation) {
 
     // JNE - Jump if NotEqual
     if (Relation == NotEqual) {
-        Write.Line(Write.ToMain, "JNE " + True);    
+        Write.Line(Write.ToMain, "JNE " + True);   
     }
 
     // JG - Jump if Greater
@@ -1846,7 +1851,7 @@ void Assembly::PushAddress(std::string Name, int Type) {
     }
     // If the type is a subfunction, push the address to the stack
     if (Type == Data.SubFunction) {
-        PUSH(Data.Asm(Name));    
+        PUSH(Data.Asm(Name));   
     }
 
     // Pop the address of the temp variable
@@ -2018,7 +2023,7 @@ void Assembly::Negate() {
     Write.Line(Write.ToMain, "FST qword[TempQWord1]");
 
     // Push the double to the stack
-    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]"); 
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
     Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
     return ;
 }
@@ -2068,7 +2073,7 @@ void Assembly::InitConsole() {
             // Verify the write handle
             Write.Line(Write.ToFireUp,   "CMP dword[HandleToOutput],-1");
             Write.Line(Write.ToFireUp,   "JNE " + OutputOKLabel);
-            Write.Line(Write.ToFireUp,   "JMP NoConsole");        
+            Write.Line(Write.ToFireUp,   "JMP NoConsole");       
             PostLabel(Write.ToFireUp,     OutputOKLabel);
 
             // Report an error if we could not verify the read/write handles
@@ -2091,7 +2096,7 @@ void Assembly::ConsoleSleep() {
     #ifdef Windows
         // Convert seconds to milliseconds
         FormatTime();
-        AddLibrary("Sleep");        // Pause execution for X milliseconds
+        AddLibrary("Sleep");       // Pause execution for X milliseconds
 
         // Get the milliseconds to sleep
         Write.Line(Write.ToMain, "POP EBX");
@@ -2101,7 +2106,7 @@ void Assembly::ConsoleSleep() {
     #endif
     // #ifdef Linux
     //     // With Linux, we can only sleep for seconds
-    //     AddLibrary("sleep");     // Pauses execution for X seconds
+    //     AddLibrary("sleep");    // Pauses execution for X seconds
     //     // So we will just round the number to an integer
     //     RoundToInteger();
     //     // Get the number
@@ -2319,6 +2324,383 @@ void Assembly::EndProgram() {
 }
 
 
+// Or() is an implementation of the logical OR operator
+void Assembly::Or() {
+    // Declare labels for true, false, and end
+    std::string TrueLabel = GetLabel();
+    std::string FalseLabel = GetLabel();
+    std::string CompareNextLabel = GetLabel();
+    std::string EndLabel = GetLabel();
+
+    // Pop the two operands off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the first operand
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+    // Load zero
+    Write.Line(Write.ToMain, "FLDZ");
+
+    // Compare the first operand to zero
+    Write.Line(Write.ToMain, "FCOM ST1");
+
+    // Get the status word
+    Write.Line(Write.ToMain, "FSTSW AX");
+    Write.Line(Write.ToMain, "WAIT");
+
+    // Store AH in flags
+    Write.Line(Write.ToMain, "SAHF");
+
+    // If the first condition is false, then we need to test the second
+    Write.Line(Write.ToMain, "JE " + CompareNextLabel);
+
+    // If the first condition was true, then there is no need to test the
+    // second condition. Instead, clean up the stack
+    // Pop the conditions off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Add a Jump if True label
+    Write.Line(Write.ToMain, "JMP " + TrueLabel);
+    PostLabel(Write.ToMain,   CompareNextLabel);
+
+    // Same comparison process as above
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+    Write.Line(Write.ToMain, "FINIT");
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+    Write.Line(Write.ToMain, "FLDZ");
+    Write.Line(Write.ToMain, "FCOM ST1");
+    Write.Line(Write.ToMain, "FSTSW AX");
+    Write.Line(Write.ToMain, "WAIT");
+    Write.Line(Write.ToMain, "SAHF");
+
+    // If both comparison evaluated to false, then jump to the false label
+    Write.Line(Write.ToMain, "JE " + FalseLabel);
+
+    // If the result was true, then jump to te true label
+    PostLabel(Write.ToMain,    TrueLabel);
+    Write.Line(Write.ToMain, "FINIT");
+    Write.Line(Write.ToMain, "FILD dword[True]");
+    Write.Line(Write.ToMain, "JMP " + EndLabel);
+    PostLabel(Write.ToMain,   FalseLabel);
+    Write.Line(Write.ToMain, "FINIT");
+    Write.Line(Write.ToMain, "FLDZ");
+    PostLabel(Write.ToMain,   EndLabel);
+    CalculateEnd();
+    return ;
+}
+
+
+// And() is an implementation of the logical AND operator
+void Assembly::And() {
+    // Declare labels for true, false, and end
+    std::string TrueLabel = GetLabel();
+    std::string FalseLabel = GetLabel();
+    std::string CompareNextLabel = GetLabel();
+    std::string EndLabel = GetLabel();
+
+    // Pop the first condition off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the first condition and zero
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+    Write.Line(Write.ToMain, "FLDZ");
+
+    // Evaluate the first condition
+    Write.Line(Write.ToMain, "FCOM ST1");
+    Write.Line(Write.ToMain, "FSTSW AX");
+    Write.Line(Write.ToMain, "WAIT");
+    Write.Line(Write.ToMain, "SAHF");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // If the first condition was false, then there is no need to continue
+    Write.Line(Write.ToMain, "JNE " + CompareNextLabel);
+
+    // If the first condition was true, then we need to check any additional
+    // comparisons as well
+    Write.Line(Write.ToMain, "JMP " + FalseLabel);
+    PostLabel(Write.ToMain,   CompareNextLabel);
+
+    // Same process as above for the next condition
+    Write.Line(Write.ToMain, "FINIT");
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+    Write.Line(Write.ToMain, "FLDZ");
+    Write.Line(Write.ToMain, "FCOM ST1");
+    Write.Line(Write.ToMain, "FSTSW AX");
+    Write.Line(Write.ToMain, "WAIT");
+    Write.Line(Write.ToMain, "SAHF");
+
+    // If the final comparison results in true, load the true label
+    Write.Line(Write.ToMain, "JNE " + TrueLabel);
+
+    // If any of the conditions resulted in false, load the false label
+    Write.Line(Write.ToMain, "JMP " + FalseLabel);
+    PostLabel(Write.ToMain,   TrueLabel);
+    Write.Line(Write.ToMain, "FINIT");
+    Write.Line(Write.ToMain, "FILD dword[True]");
+    Write.Line(Write.ToMain, "JMP " + EndLabel);
+    PostLabel(Write.ToMain,   FalseLabel);
+    Write.Line(Write.ToMain, "FLDZ");
+
+    // Post the end label and end the calculation
+    PostLabel(Write.ToMain,   EndLabel);
+    CalculateEnd();
+    return ;
+}
+
+
+// Not() is an implementation of the logical NOT operator
+void Assembly::Not() {
+    // Declare labels for true and false
+    std::string FalseLabel = GetLabel();
+    std::string TrueLabel = GetLabel();
+
+    // Pop the first condiiton off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the first condition
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+    // Load zero (which represents false) 
+    Write.Line(Write.ToMain, "FLDZ");
+
+    // Evalutate the comparison
+    Write.Line(Write.ToMain, "FCOM ST1");
+
+    // Store the status word
+    Write.Line(Write.ToMain, "FSTSW AX");
+    Write.Line(Write.ToMain, "WAIT");
+
+    // Store AH in flag
+    Write.Line(Write.ToMain, "SAHF");
+
+    // If the comparison is true, then negate it to be false
+    // We can keep the zero value to be a "flag" for false
+    Write.Line(Write.ToMain, "JNE " + FalseLabel);
+
+    // If the comparison was false, then negate it to be true
+    Write.Line(Write.ToMain, "FINIT");
+    Write.Line(Write.ToMain, "FILD dword[True]");
+    PostLabel(Write.ToMain,   FalseLabel);
+
+    // End the calcuation
+    CalculateEnd();
+    return ;
+}
+
+
+// StartIf() stores the End label after a comparison, which is used for the IF
+// statement
+std::string Assembly::StartIf() {
+    // End and Temp labels
+    std::string EndLabel = GetLabel();
+    std::string TempLabel = GetLabel();
+
+    // Pop the result of the comparison off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the result of the comparison
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+    // Load zero as a flag for false
+    Write.Line(Write.ToMain, "FLDZ");
+
+    // Evaluate the comparison
+    Write.Line(Write.ToMain, "FCOM ST1");
+
+    // Store the status word flags in the AX register
+    Write.Line(Write.ToMain, "FSTSW AX");
+
+    // Wait until the operation is complete
+    Write.Line(Write.ToMain, "WAIT");
+
+    // Store the flags in AH, so that they are in a usable state
+    Write.Line(Write.ToMain, "SAHF");
+
+    // If the result is not false, then the comparison was true and we should
+    // continue to the code inside the If block
+    Write.Line(Write.ToMain, "JNE " + TempLabel);
+
+    // If the comparison was false, jump to the end of the If block
+    Write.Line(Write.ToMain, "JMP " + EndLabel);
+    PostLabel(Write.ToMain,   TempLabel);
+
+    // Return EndLabel so we can skip over the If statement without executing
+    // any code inside the If block
+    return EndLabel;
+}
+
+
+// StartNewIfSection() starts an If block
+std::string Assembly::StartNewIfSection(std::string LastEndLabel, std::string DoneIf) {
+    Write.Line(Write.ToMain, "JMP " + DoneIf);
+    PostLabel(Write.ToMain,   LastEndLabel);
+    return "";
+}
+
+
+// ElseIf() starts an Else If block
+std::string Assembly::ElseIf(std::string LastEndLabel, std::string DoneIf) {
+    // Labels to mark places the compiler should "Jump" too
+    std::string EndLabel = GetLabel();
+    std::string TempLabel = GetLabel();
+
+    // Pop the the result of the comparison off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the result
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+    // Load a zero as a flag for false
+    Write.Line(Write.ToMain, "FLDZ");
+
+    // Evaluate the comparison
+    Write.Line(Write.ToMain, "FCOM ST1");
+
+    // Store the flags in the AX register
+    Write.Line(Write.ToMain, "FSTSW AX");
+
+    // Wait until the operation is complete
+    Write.Line(Write.ToMain, "WAIT");
+
+    // Store the flags in the AH register
+    Write.Line(Write.ToMain, "SAHF");
+
+    // If the result of the comparison is true, then execute the code inside
+    // the Else If block
+    Write.Line(Write.ToMain, "JNE " + TempLabel);
+    Write.Line(Write.ToMain, "JMP " + EndLabel);
+    PostLabel(Write.ToMain,    TempLabel);
+
+    // Return EndLabel so we can skip over the If statement without executing
+    // any code inside the Else If block
+    return EndLabel;
+}
+
+
+// Else() starts the Else block and executes the code inside if reached
+std::string Assembly::Else(std::string EndLabel, std::string DoneIf) {
+    // Get a label to mark the end of the else block
+    std::string NextEndLabel = GetLabel();
+
+    // If we executed code inside an If/Else If block, then the compiler
+    // should not execute any code inside the Else block
+    Write.Line(Write.ToMain, "JMP " + DoneIf);
+
+    // If we did not execute code inside an If/Else If block, then the compiler
+    // should execute code inside the Else block
+    PostLabel(Write.ToMain,    EndLabel);
+    return NextEndLabel;
+}
+
+
+// EndIf() tells the compiler to jump when it exits an If/Else If/Else block 
+void Assembly::EndIf(std::string EndLabel, std::string DoneIf) {
+    // Add a jump command to the end of the If/Else If/Else block
+    Write.Line(Write.ToMain, "JMP " + EndLabel);
+
+    // Post the label in the If/Else If statements so they can exit without
+    // executing code
+    PostLabel(Write.ToMain, EndLabel);
+    PostLabel(Write.ToMain, DoneIf);
+    return ;
+}
+
+
+// PrepareWhile() marks the location where a loop begins
+std::string Assembly::PrepareWhile() {
+    // Get a label to mark the start of the loop
+    std::string StartLabel = GetLabel();
+
+    // Post the label
+    PostLabel(Write.ToMain, StartLabel);
+    return StartLabel;
+}
+
+
+// StartWhile() executes code if the loop condition is true
+std::string Assembly::StartWhile() {
+    std::string EndWhileLabel = GetLabel();
+    std::string TempLabel = GetLabel();
+
+    // Pop the comparison off the stack
+    Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+    Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the result of the comparison
+    Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+    // Load 0 as a flag for false
+    Write.Line(Write.ToMain, "FLDZ");
+
+    // Evaluate the comparison (check if it is not zero)
+    Write.Line(Write.ToMain, "FCOM ST1");
+
+    // Store flags in the AX register
+    Write.Line(Write.ToMain, "FSTSW AX");
+
+    // Wait for the operation to complete
+    Write.Line(Write.ToMain, "WAIT");
+
+    // Store the flags in th AH register so the compiler can access them
+    Write.Line(Write.ToMain, "SAHF");
+
+    // If the loop condition is not true, exit the loop and jump to EndLabel
+    // If the loop condition was true, execute the code inside the loop body
+    Write.Line(Write.ToMain, "JNE " + TempLabel);
+    Write.Line(Write.ToMain, "JMP " + EndWhileLabel);
+    PostLabel(Write.ToMain,    TempLabel);
+
+    // Return the position of loop's end so the compiler knows where to jump if
+    // the loop condition evaluates to false
+    return EndWhileLabel;
+}
+
+
+// StopWhile() tells the compiler to jump where the loop ends and to continue
+// executing the rest of the program
+void Assembly::StopWhile(std::string StartWhileLabel, std::string EndWhileLabel) {
+    Write.Line(Write.ToMain, "JMP " + StartWhileLabel);
+    PostLabel(Write.ToMain, EndWhileLabel);
+    return ;
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2342,31 +2724,24 @@ void Assembly::EndProgram() {
 
 // TODO:
 // IMPLEMENT 82 functions!! (deleted after implementation)
-// DONE w/: 59
-
-void Or();
-void And();
-void Not();
-
-std::string StartIf();
-std::string StartNewIfSection(std::string Endlabel, std::string DoneIf);
-std::string ElseIf(std::string EndLabel, std::string DoneIf);
-std::string Else(std::string EndLabel, std::string DoneIf);
-void EndIf(std::string EndLabel, std::string DoneIf);
-std::string PrepareWhile();
-std::string StartWhile();
-void StopWhile(std::string StartWhileLabel, std::string EndWhileLabel);
+// DONE w/: 70
+void CreateSubFunction(std::string Name, bool External);
+void EndCreateSubFunction(std::string Name, bool External);
+void InvokeSubFunction(std::string Name);
 
 void ReturnValue(std::string Name, std::string Type);
-void CleanUpReturnValue(std::string Name, std::string Type); - DONE w/: 3
+void CleanUpReturnValue(std::string Name, std::string Type);
 void PushReturnValue(std::string Name, std::string Type);
+
 void LoadExternalSubFunction(std::string Name);
 void CallExternalSubFunction(std::string Name);
+
 void AllocateParameterPool(int Size);
 void AddToParameterPool(int Type, int Where);
 void PushParameterPool(int Type, int Where);
 void FreeParameterPool();
 void Callback(std::string Name);
+
 void AdjustStack(int Size);
 void OptimizeSubFunctions();
 
