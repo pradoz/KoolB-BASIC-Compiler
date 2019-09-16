@@ -2024,6 +2024,301 @@ void Assembly::Negate() {
 }
 
 
+// InitConsole() starts the the console
+void Assembly::InitConsole() {
+    // Need some variables
+    Write.Line(Write.ToData,         "NoConsoleMessage db \'Error - Cannot access the "
+                                     "console handles for Input/Output.\',0");
+    Write.Line(Write.ToData,         "ConsoleTemp dd 0");
+
+    // Add a newline character after each call to PRINT
+    Write.Line(Write.ToData,         "ConsoleNewLine db 10,0");
+
+    // Initialize console
+    #ifdef Windows
+        // Add a few commans to clear, read from, and write to the screen
+        Write.Line(Write.ToData,     "ConsoleClear db \'CLS\',0");
+        Write.Line(Write.ToData,     "HandleToInput dd 0");
+        Write.Line(Write.ToData,     "HandleToOutput dd 0");
+
+        // Initialize data for the console to run
+        if (AppType == Console) {
+            // Add labels that we can jump to
+            std::string InputOKLabel= GetLabel();
+            std::string OutputOKLabel = GetLabel();
+
+            // Import Windows API function that retrieves a handle to the
+            // specified standard device
+            AddLibrary("GetStdHandle");
+
+            // Store the read handle
+            Write.Line(Write.ToFireUp,   "stdcall GetStdHandle,-10");
+            Write.Line(Write.ToFireUp,   "MOV dword[HandleToInput],EAX");
+
+            // Store the write handle
+            Write.Line(Write.ToFireUp,   "stdcall GetStdHandle,-11");
+            Write.Line(Write.ToFireUp,   "MOV dword[HandleToOutput],EAX");
+
+            // Verify the read handle
+            Write.Line(Write.ToFireUp,   "CMP dword[HandleToInput],-1");
+            Write.Line(Write.ToFireUp,   "JNE " + InputOKLabel);
+            Write.Line(Write.ToFireUp,   "JMP NoConsole");
+            PostLabel(Write.ToFireUp,     InputOKLabel);
+
+            // Verify the write handle
+            Write.Line(Write.ToFireUp,   "CMP dword[HandleToOutput],-1");
+            Write.Line(Write.ToFireUp,   "JNE " + OutputOKLabel);
+            Write.Line(Write.ToFireUp,   "JMP NoConsole");        
+            PostLabel(Write.ToFireUp,     OutputOKLabel);
+
+            // Report an error if we could not verify the read/write handles
+            PostLabel(Write.ToFunction,  "NoConsole");
+            Write.Line(Write.ToFunction, "MOV dword[ExitStatus],1");
+            Write.Line(Write.ToFunction, "stdcall MessageBoxA,0,NoConsoleMessage,Error,0");
+            Write.Line(Write.ToFunction, "JMP Exit");
+        }
+    #endif
+    // Linux uses "clear" to clear the console
+    // #ifdef Linux
+    //     // The clear screen command is not cls, but clear under Linux
+    //     Write.Line(Write.ToData,     "ConsoleClear db \'clear\',0");
+    // #endif    
+}
+
+
+// ConsoleSleep() Pauses the program for a set amount of seconds
+void Assembly::ConsoleSleep() {
+    #ifdef Windows
+        // Convert seconds to milliseconds
+        FormatTime();
+        AddLibrary("Sleep");        // Pause execution for X milliseconds
+
+        // Get the milliseconds to sleep
+        Write.Line(Write.ToMain, "POP EBX");
+
+        // Now pause execution
+        Write.Line(Write.ToMain, "stdcall Sleep,EBX");
+    #endif
+    // #ifdef Linux
+    //     // With Linux, we can only sleep for seconds
+    //     AddLibrary("sleep");     // Pauses execution for X seconds
+    //     // So we will just round the number to an integer
+    //     RoundToInteger();
+    //     // Get the number
+    //     Write.Line(Write.ToMain, "POP EBX");
+    //     // Now pause execution
+    //     Write.Line(Write.ToMain, "ccall sleep,EBX");
+    // #endif
+    return ;
+}
+
+
+// FormatTime() converts seconds into milliseconds
+void Assembly::FormatTime() {
+    #ifdef Windows
+        // Pop the double off the stack
+        Write.Line(Write.ToMain, "POP dword[TempQWord1]");
+        Write.Line(Write.ToMain, "POP dword[TempQWord1+4]");
+
+        // Store 1000 so we can do math and convert to milliseconds
+        Write.Line(Write.ToMain, "MOV dword[TempQWord2],1000");
+
+        // Initialize the FPU
+        Write.Line(Write.ToMain, "FINIT");
+
+        // Load the double
+        Write.Line(Write.ToMain, "FLD qword[TempQWord1]");
+
+        // Load the integer 1000
+        Write.Line(Write.ToMain, "FILD dword[TempQWord2]");
+
+        // Convert seconds to milliseconds
+        Write.Line(Write.ToMain, "FMUL ST0,ST1");
+
+        // Round ST0 to the nearest integer
+        Write.Line(Write.ToMain, "FRNDINT");
+
+        // Store the integer
+        Write.Line(Write.ToMain, "FIST dword[TempQWord1]");
+
+        // Push the integer to the stack
+        Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    #endif
+    return ;
+}
+
+
+// ConsoleCls() clears the console screen and resets the cursor position
+void Assembly::ConsoleCls() {
+    // Import external library function for command line commands
+    AddLibrary("system");
+    #ifdef Windows
+        // Windows calls CLS
+        // TODO: test possible CLS BUG
+        // i think it should be:
+        // Write.Line(Write.ToMain, "stdcall system,ConsoleClear")
+        Write.Line(Write.ToMain, "ccall system,ConsoleClear");
+    #endif
+    // #ifdef Linux
+    //     Write.Line(Write.ToMain, "ccall system,ConsoleClear");
+    // #endif
+    return ;
+}
+
+
+// ConsolePrint() prints a number or string to the console
+void Assembly::ConsolePrint(int Type) {
+    // If we are printing a string, let's be about it
+    if (Type == Data.String) {
+        // Note: Here, we use WriteFile because WriteConsole cannot be
+        // redirected to a file
+        #ifdef Windows
+            // Windows API function the compiler uses to write to the console
+            AddLibrary("WriteFile");
+
+            // Get the string from the stack
+            Write.Line(Write.ToMain, "POP EBX");
+
+            // Get the length of the string
+            GetStringLength("EBX");
+
+            // We don't want to print out the null-terminator, so decrement length
+            Write.Line(Write.ToMain, "DEC EAX");
+
+            // Now call WriteFile on the console output handle
+            Write.Line(Write.ToMain, "stdcall WriteFile,dword[HandleToOutput],EBX,"
+                                                             "EAX,ConsoleTemp,0");
+            // Now free the string
+            FreeMemory(Write.ToMain, "EBX");
+        #endif
+        // Under Linux, a simple, yet classic printf will do
+        // #ifdef Linux
+        //     AddLibrary("printf");
+        //     // Get the string
+        //     Write.Line(Write.ToMain, "POP EBX");
+        //     // Print the string
+        //     Write.Line(Write.ToMain, "ccall printf,EBX");
+        //     // Free the string
+        //     FreeMemory(Write.ToMain, "EBX");
+        // #endif
+    }
+    if (Type == Data.Number) {
+        #ifdef Windows
+            AddLibrary("WriteFile");     // Write a string to a file (or console)
+            // Convert the number to a string
+            ConvertToString();
+            // Get the string
+            Write.Line(Write.ToMain, "POP EBX");
+            // Get the length of the string
+            GetStringLength("EBX");
+            // Decrement the length of the string so we don't print the null-terminator
+            Write.Line(Write.ToMain, "DEC EAX");
+            // Write to the console output handle
+            Write.Line(Write.ToMain, "stdcall WriteFile,dword[HandleToOutput],EBX,"
+                                                             "EAX,ConsoleTemp,0");
+            // Free the string
+            FreeMemory(Write.ToMain, "EBX");
+        #endif
+        // Things are always so much more simple under Linux!
+        // #ifdef Linux
+        //     AddLibrary("printf");
+        //     // Convert the double to a string
+        //     ConvertToString();
+        //     // Get the string
+        //     Write.Line(Write.ToMain, "POP EBX");
+        //     // Print the string
+        //     Write.Line(Write.ToMain, "ccall printf,EBX");
+        //     // Free the string
+        //     FreeMemory(Write.ToMain, "EBX");
+        // #endif
+    }
+    return ;
+}
+
+
+// ConsolePrintNewLine() Prints a new line, so each PRINT is on a single line
+void Assembly::ConsolePrintNewLine() {
+    #ifdef Windows
+        // Write a new line character to the console
+        Write.Line(Write.ToMain, "stdcall WriteFile,dword[HandleToOutput],"
+                                                    "ConsoleNewLine,1,ConsoleTemp,0");
+    #endif
+    // #ifdef Linux
+    //     // Write \n to the console
+    //     Write.Line(Write.ToMain, "ccall printf,ConsoleNewLine");
+    // #endif
+    return ;
+}
+
+
+// ConsoleInput() Reads a string from the console
+void Assembly::ConsoleInput() {
+    #ifdef Windows
+        // Import Windows API function to handle console input
+        AddLibrary("ReadFile");
+
+        // Allocate 16KB to store string
+        AllocMemory(Write.ToMain,   "16384");
+        Write.Line(Write.ToMain,    "MOV EBX,EAX");
+
+        // Read from the console
+        Write.Line(Write.ToMain,    "stdcall ReadFile,dword[HandleToInput],EBX,16383,"
+                                                            "ConsoleTemp,0");
+
+        // Get the string length
+        GetStringLength("EBX");
+
+        // Decrement the length 3 times
+        Write.Line(Write.ToMain,    "DEC EAX");
+        Write.Line(Write.ToMain,    "DEC EAX");
+        Write.Line(Write.ToMain,    "DEC EAX");
+        Write.Line(Write.ToMain,    "MOV EDI,EAX");
+
+        // Allocate memory for the new string 
+        AllocMemory(Write.ToMain, "EDI");
+        Write.Line(Write.ToMain,    "MOV ESI,EAX");
+
+        // Copy the string
+        CopyMemoryOfSize("ESI", "EBX", "EDI");
+
+        // Append a null-terminator to the end of the string
+        Write.Line(Write.ToMain,    "MOV byte[ESI+EDI],0");
+
+        // And add the string to the stack
+        Write.Line(Write.ToMain,    "PUSH ESI");
+    #endif
+    // #ifdef Linux
+    //     AddLibrary("gets");
+    //     // Since gets can cause an access violation, set size really large (64KB)
+    //     AllocMemory(Write.ToMain, "65536");
+    //     Write.Line(Write.ToMain,    "MOV EBX,EAX");
+    //     // Get the information from the console
+    //     Write.Line(Write.ToMain,    "ccall gets,EBX");
+    //     // Get the length of the string the user entered
+    //     GetStringLength("EBX");
+    //     Write.Line(Write.ToMain,    "MOV EDI,EAX");
+    //     // Allocate memory for the new string (so we don't occupy 64KB when only 
+    //     // several bytes might be needed
+    //     AllocMemory(Write.ToMain, "EDI");
+    //     Write.Line(Write.ToMain,    "MOV ESI,EAX");
+    //     // Copy the string
+    //     CopyMemoryOfSize("ESI", "EBX", "EDI");
+    //     // Null-terminate the string
+    //     Write.Line(Write.ToMain,    "MOV byte[ESI+EDI],0");
+    //     // And add the string to the stack
+    //     Write.Line(Write.ToMain,    "PUSH ESI");
+    // #endif
+    return ;
+}
+
+
+// EndProgram() jumps to the exit routine
+void Assembly::EndProgram() {
+    Write.Line(Write.ToMain, "JMP Exit");
+    return ;
+}
+
+
 
 
 
@@ -2047,15 +2342,7 @@ void Assembly::Negate() {
 
 // TODO:
 // IMPLEMENT 82 functions!! (deleted after implementation)
-// DONE w/: 51
-void InitConsole();
-void ConsoleSleep();
-void FormatTime();
-void ConsoleCls();
-void ConsolePrint(int Type);
-void ConsolePrintNewLine();
-void ConsoleInput();
-void EndProgram();
+// DONE w/: 59
 
 void Or();
 void And();

@@ -1,15 +1,12 @@
 #include <iostream>
+#include <vector>
+#include <memory>
+
 
 int main() {
-    bool flag = false;
-    int arr[5] = {0};
-    for (int i = 0; i < 15; ++i) {
-        std::cout << arr[i] << std::endl;
-    }
-    flag
-    ? std::cout << "True" << std::endl
-    : std::cout << "False" << std::endl;
-    
-    
+    std::vector<int> vec1;
+    std::vector<int> vec2;
+    std::unique_ptr<int> original_vector_ptr = vec(new int);
+    // unique_ptr<std::vector<int>> new_vector_ptr = std::move(original_vector_ptr);
     return 0;
 }
