@@ -1,0 +1,4 @@
+﻿
+Error!
+An object file was given to GoLink whose format was not supported (Strings.obj)
+Output file not made

@@ -1,12 +1,12 @@
-#ifndef FILENAME_HPP
-#define FILENAME_HPP
+#ifndef COMPILER_HPP
+#define COMPILER_HPP
 
-#include <string>
+// #include <string>
 
 class Compiler {
 public:
     void Compile(Reading SourceFile, bool IsIncFile);
-    void Statement();
+    bool Statement();
     void DIM();
     void NotDIM();
 
@@ -47,16 +47,20 @@ public:
 
     /* Logical operators and comparison/relation statements  */
     void Condition();
+
     // Logical Operators
     void Or();
     void And();
     void Not();
+
     // Relations
     int Relation(bool GetNextWord = true);
     bool IsRelation(std::string Word);
+
     // Comparison
     void CompareNumbers(std::string Relation);
     void CompareStrings(std::string Relation);
+
     // Conditional
     void If();
 
@@ -83,7 +87,6 @@ public:
 
     void ChooseAppType();
 
-    // TODO
     void OptimizeApp();
 
     bool Directives(std::string Directive);
@@ -1336,7 +1339,7 @@ int Compiler::LoadUDT(std::string UDT, int Type) {
     Read.GetNextWord();
 
     // Check for a dot identifier after the identifier
-    if (Read.Word() != '.') {
+    if (Read.Word() != ".") {
         Error.ExpectedPeriod(Read);
     }
 
@@ -1422,6 +1425,62 @@ void Compiler::Not() {
         Relation(false);
     }
     return ;
+}
+
+
+// Relation() return 0 if the expression is false, and -1 if true
+// Example:
+//   If 1=1 Then
+//      ^^^---Deal with an individual relational expression
+int Compiler::Relation(bool GetNextWord) {
+    std::string Relation;
+
+    // Call the core routine to calculate the left hand side of the expression
+    int Type = Core(Data.Unknown, GetNextWord);
+
+    // Case where the relational expression is between two numeric types
+    if (Type == Data.Number) {
+        // Extract the operator
+        AddSubtract();
+
+        // If we find a relational operator, then get the other expression
+        if (IsRelation(Read.Word())) {
+            // Store which relational operator we have for future reference
+            Relation = Read.Word();
+
+            // Get the right hand side of the relational expression
+            Core(Data.Number);
+            AddSubtract();
+
+            // Evaluate the relation
+            CompareNumbers(Relation);
+        }
+        return Data.Number;
+    }
+
+    // Case where the relational expression is between two string types
+    if (Type == Data.String) {
+        // Extract the operator
+        StringAdd();
+
+        // OK, If we find a relational operator, then get the other expression
+        if (IsRelation(Read.Word())) {
+            // Store the relational operator for future reference
+            Relation = Read.Word();
+
+            // Get the right hand side of the relational expression
+            Core(Data.String);
+            StringAdd();
+
+            // Evaluate the relation
+            CompareStrings(Relation);
+            return Data.Number;
+        }
+
+        // Convert it to an integer for comparison
+        Asm.ConvertToNumber();
+        return Data.String;
+    }
 }
 
 
@@ -2517,7 +2576,7 @@ void Compiler::UnprepareParameters(std::string Name) {
     // Set the Parameter pool size to 0
     Data.SetParameterPoolSizeFilled(Name, 0);
 
-    for (int i = 1; i <= ParamCount; i++) {
+    for (int i = 1; i <= ParamCount; ++i) {
         // Get information associated with parameter
         std::string Type = Data.GetSubFunctionInfo(Name).Parameters[i].Type;
         std::string How = Data.GetSubFunctionInfo(Name).Parameters[i].How;
@@ -3208,4 +3267,4 @@ void Compiler::PrepareProgram() {
 
 
 
-#endif // FILENAME_HPP
+#endif // COMPILER_HPP

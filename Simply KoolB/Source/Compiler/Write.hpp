@@ -3,10 +3,10 @@
 
 
 
-#include <fstream>
-#include <string>
-#include <windows.h>
-#include "Misc.hpp"
+// #include <fstream>
+// #include <string>
+// #include <windows.h>
+// #include "Misc.hpp"
 
 class Writing {
 public:
@@ -28,23 +28,33 @@ public:
     // { }
 
     // Formats a string of assembly language code into a line and adds it to
-    // the desired section.
+    // the specified section.
     void Line(int Section, std::string Line);
 
-    void Comment(int Section, std::string Comment);
-    
     // Writes all the sections of the programs to files based on the FileName.
     void File(std::string FileName);
 
-    // Runs the assembler, resource compiler, and linker.
-    // Produces an executable
+    // Runs the assembler, resource compiler, and linker produces an executable
     void BuildApp(std::string FileName);
 
-    enum Sections{ToData, ToFireUp, ToMain, ToFinishUp, ToResource, ToLibrary};
+    // Handles exiting and entering subs/functions
+    void EnterSubFunction();
+    void ExitSubFunction();
+
+    enum Sections {
+        ToData,
+        ToFireUp,
+        ToMain,
+        ToFinishUp,ToResource,
+        ToLibrary,
+        ToFunction
+    };
 
 private:
     /*
     - AppData - Contains variables and data that the program will need.
+
+    - Functions - Contains the assembly language related to functions.
 
     - FireUpApp - Contains initialization routines for the program like object
     constructors and internal code that gets the program ready to run user code.
@@ -60,13 +70,27 @@ private:
 
     - Library - Contains all the external functions that the program will
     need. (Windows API or Linux C-Library calls)
+
+    - InSubFunction - True if we are currently inside of a function
+
+    - SubFunctionFireUpApp - Initializes a function
+
+    - SubFunctionMainApp - Main body of the function
+
+    - SubFunctionFinishUpApp - Clean up memory/parameters after a function call
     */
+
     std::string AppData;
+    std::string Functions;
     std::string FireUpApp;
     std::string MainApp;
     std::string FinishUpApp;
     std::string Resources;
-    std::string Library;  
+    std::string Library;
+    bool InSubFunction;
+    std::string SubFunctionFireUpApp;
+    std::string SubFunctionMainApp;
+    std::string SubFunctionFinishUpApp;
 };
 
 
@@ -75,34 +99,41 @@ private:
 void Writing::Line(int Section, std::string Asm) {
     std::string Line = Asm + "\n";
     switch (Section) {
-    case ToData:
-        AppData += Line;
-        break;
-    case ToFireUp:
-        FireUpApp += Line;
-        break;
-    case ToMain:
-        MainApp += Line;
-        break;
-    case ToFinishUp:
-        FinishUpApp += Line;
-        break;
-    case ToResource:
-        Resources += Line;
-        break;
-    case ToLibrary:
-        Library += Line;
-        break;
-    default:
-        std::cout << "ERR: Cannot write to an invalid section." << std::endl;
-        break;
+        case ToData:
+            AppData += Line;
+            break;
+        case ToFireUp:
+            if (InSubFunction) {
+                SubFunctionFireUpApp += Line;
+            }
+            FireUpApp += Line;
+            break;
+        case ToMain:
+            if (InSubFunction) {
+                SubFunctionFireUpApp += Line;
+            }
+            MainApp += Line;
+            break;
+        case ToFinishUp:
+            if (InSubFunction) {
+                SubFunctionFireUpApp += Line;
+            }
+            FinishUpApp += Line;
+            break;
+        case ToResource:
+            Resources += Line;
+            break;
+        case ToLibrary:
+            Library += Line;
+            break;
+        case ToFunction:
+            Functions += Line;
+            break;
+        default:
+            std::cout << "ERR: Cannot write to an invalid section." << std::endl;
+            break;
     }
     return ;
-}
-
-
-void Writing::Comment(int Section, std::string Comment) {
-    Line(Section, ";\t" + Comment);
 }
 
 
@@ -116,14 +147,15 @@ void Writing::File(std::string FileName) {
     AsmFile.open(AsmFileName.c_str(), std::ios::out);
     ResourceFile.open(ResourceFileName.c_str(), std::ios::out);
 
-    // Write to assembly file
+    // Write to the assembly file
     AsmFile << Library << std::endl;
     AsmFile << FireUpApp << std::endl;
     AsmFile << MainApp << std::endl;
     AsmFile << FinishUpApp << std::endl;
+    AsmFile << Functions << std::endl;
     AsmFile << AppData << std::endl;
 
-    // Write to resource file
+    // Write to the resource file
     ResourceFile << Resources << std::endl;
 
     // Close the assembly and resource files
@@ -133,27 +165,122 @@ void Writing::File(std::string FileName) {
 }
 
 
+// BuildApp() writes the file to the disk, assembles the file, and links it
 void Writing::BuildApp(std::string FileName) {
-    File(FileName);
-    if (OS == Windows) {
-            Run("Asm\\nasm -f win32 \"" + FileName + ".asm\" > results.txt");
-            Run("Asm\\GoRC /r /ni /nw \"" + FileName + ".rc\" > results.txt");
-        // No GUI implementation currently
-        if (AppType == GUI) {
-            Run("Asm\\GoLink /console /ni /nw \"" + FileName + ".obj\" \"" + FileName +
-                ".res\" kernel32.dll user32.dll gdi32.dl msvcrt.dll > results.txt");
-        }
-        if (AppType == Console) {
-            Run("Asm\\GoLink /console /ni /nw \"" + FileName + ".obj\" \"" + FileName
-                + ".res\" kernel32.dll user32.dll gdi32.dl msvcrt.dll > results.txt");
-        }
-        return ;
-    }
+    // Strip the file extension so we don't append multiple file extensions
+    FileName = StripOffExtension(FileName);
 
-    if (OS == Linux) {
-        Run("Asm\\NASM -E results.txt -f elf \"" + FileName + ".asm\"");
-        return ;
-    }
+    // Write the file to disk
+    File(FileName);
+
+    // For Windows OS, use NASM and GoLink
+    #ifdef Windows
+        // Run NASM
+        Run("Asm\\nasm -f win32 -o \"" + FileName + ".obj\" \"" + FileName + ".asm\"");
+        printf(" - Assemble time -> %f seconds\r\n", 
+                   (double)(clock() - TempTime) / (double)CLK_TCK);
+
+        TempTime = clock();
+
+        // Run GoRC
+        Run("Asm\\GoRC /r /ni /nw \"" + FileName + ".rc\" > results.txt");
+
+        // Run GoLink
+        // Case where we need to link a console app
+        if (AppType == Console) {
+            Run("Asm\\GoLink /ni /nw /CONSOLE \"" + FileName + ".obj\" \"" + FileName
+                + ".res\" kernel32.dll user32.dll gdi32.dll msvcrt.dll > results.txt");
+        }
+        // Case where we need to link a GUI app
+        if (AppType == GUI) {
+            Run("Asm\\GoLink /ni /nw \"" + FileName + ".obj\" \"" + FileName +
+                ".res\" kernel32.dll user32.dll gdi32.dll msvcrt.dll > results.txt");
+        }
+        // Case where we need to link a DLL that exports all the user-defined
+        // functions in the database
+        if (AppType == DLL) {
+            Run("Asm\\GoLink /ni /nw /DLL \"" + FileName + ".obj\" /EXPORTS " +
+            Data.ListFunctions() + " \"" + FileName + ".res\" kernel32.dll "
+            "user32.dll gdi32.dll msvcrt.dll > results.txt");        
+        }
+
+        printf(" - Linking time -> %f seconds\r\n",
+                   (double)(clock() - TempTime) / (double)CLOCKS_PER_SEC);
+
+        TempTime = clock();
+    #endif
+
+        // TODO: Compression with PEPaCK
+        // Compress the program or DLL with PEPaCK
+        // if (Compress) {
+        //     if (AppType == GUI or AppType == Console) {
+        //         Run("Asm\\pepack \"" + FileName + ".exe\" > results.txt");
+        //     }
+        //     if (AppType == DLL) {
+        //         Run("Asm\\pepack \"" + FileName + ".dll\" > results.txt");
+        //     }
+        //     printf(" - Compress time -> %f seconds\r\n",
+        //                (double)(clock() - TempTime) / (double)CLK_TCK);
+        // }
+    // If we are using Link, use NASM (Netwide Assembler) and GNU ld
+    // #ifdef Linux
+    //     Run("nasm -E results.txt -f elf \"" + FileName + ".asm\"");
+    //     printf(" - Assemble time ->    %f seconds\r\n", (double)(clock() - TempTime) / (double)CLK_TCK);
+    //     TempTime = clock();
+    //     // GUI and Console are linked identically
+    //     if (AppType == GUI || AppType == Console) {
+    //         Run("ld -s -dynamic-linker /lib/ld-linux.* -o \"" + FileName + "\" \"" + 
+    //                 FileName + ".o\" /lib/libc.* /lib/libm.* /lib/libdl.* > results.txt");
+    //     }
+    //     // Link a shared library for Linux
+    //     if (AppType == DLL) {
+    //         Run("ld -s -dynamic-linker /lib/ld-linux.* -shared -o \"" + FileName + 
+    //                 "\" \"" + FileName + ".o\" /lib/libc.* /lib/libm.* /lib/libdl.* "
+    //                 "> results.txt");
+    //     }
+    //     printf(" - Linking time    ->    %d seconds\r\n", (double)(clock() - TempTime) / (double)CLK_TCK);
+    //     TempTime = clock();
+    //     // To compress, strip the symbols and then compress it with UPX
+    //     if (Compress == true) {
+    //         if (AppType == GUI || AppType == Console) {
+    //             Run("strip \"" + FileName + "\" > results.txt");
+    //             Run("upx \"" + FileName + "\" > results.txt");
+    //         }
+    //         if (AppType == DLL) {
+    //             Run("upx \"" + FileName + ".so\" > results.txt");
+    //         }
+    //         printf(" - Compress time ->    %f seconds\r\n", (double)(clock() - TempTime) / 
+    //                                                                                                 (double)CLK_TCK);
+    //     }
+    // #endif
+    return ;
 }
+
+
+// EnterSubFunction() resets function values to prepare a function declaration
+void Writing::EnterSubFunction() {
+    // Set InSubFunction to true since we are entering a sub or function
+    InSubFunction = true;
+
+    // Reset the strings for the sub or function to be written
+    SubFunctionFireUpApp = "";
+    SubFunctionMainApp = "";
+    SubFunctionFinishUpApp = "";
+}
+
+
+// ExitSubFunction() combines function information and writes it to the app
+void Writing::ExitSubFunction() {
+    // Set InSubFunction to false since we are exiting a sub or function
+    InSubFunction = false;
+
+    // Finish writing the sub or function in assembly
+    Line(ToFunction, SubFunctionFireUpApp);
+    Line(ToFunction, SubFunctionMainApp);
+    Line(ToFunction, SubFunctionFinishUpApp);
+}
+
+
+
 
 #endif // WRITE_HPP

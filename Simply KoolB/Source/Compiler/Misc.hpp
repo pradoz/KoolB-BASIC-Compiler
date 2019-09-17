@@ -1,10 +1,10 @@
 #ifndef MISC_HPP
 #define MISC_HPP
 
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <ctime>
+// #include <iostream>
+// #include <fstream>
+// #include <string>
+// #include <ctime>
 // #include <windows.h>
 
 
@@ -25,7 +25,7 @@ void Run(std::string Command) {
     File.open(".\\results.txt", std::ios::in);
     while (File.is_open() == false) {
         File.open(".\\results.txt", std::ios::in);
-        if ((clock() / CLK_TCK) - StartTime > 300) {
+        if ((clock() / CLK_TCK) - StartTime > 120) {
             std::cout << "Time out running: " + Command << std::endl;
             exit(1);
         }

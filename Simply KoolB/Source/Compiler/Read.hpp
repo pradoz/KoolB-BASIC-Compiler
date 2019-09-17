@@ -1,10 +1,10 @@
 #ifndef READ_HPP
 #define READ_HPP
 
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <map>
+// #include <iostream>
+// #include <fstream>
+// #include <string>
+// #include <map>
 
 
 //Holds information for the $Const directive
@@ -299,7 +299,7 @@ void Reading::GetSymbol() {
         ++BookMark;
         if (SkipWhiteSpace()) {
             std::cout << "Error on line: " << CurrentLine << std::endl;
-            std::cout << "ERR: Newline not found after \'_\'" << std::endl;
+            std::cout << "ERR: Newline not found after \"_\"" << std::endl;
             exit(1);
         }
         GetNextWord();
@@ -317,13 +317,13 @@ void Reading::GetSymbol() {
     ++BookMark;
 
     // We need at least two words to process these operations
-    if (CurrentWord == '<') {
+    if (CurrentWord == "<") {
         if (Book[BookMark] == '=' or Book[BookMark] == '>') {
             CurrentWord += Book[BookMark];
             ++BookMark;
         }
     }
-    if (CurrentWord == '>') {
+    if (CurrentWord == ">") {
         if (Book[BookMark] == '=') {
             CurrentWord += Book[BookMark];
             ++BookMark;

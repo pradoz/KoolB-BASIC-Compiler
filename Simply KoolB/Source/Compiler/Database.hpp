@@ -1,13 +1,13 @@
 #ifndef DATABASE_HPP
 #define DATABASE_HPP
 
-#include "Misc.hpp"
-#include "Read.hpp"
+// #include "Misc.hpp"
+// #include "Read.hpp"
 
-#include <algorithm>
-#include <string>
-#include <vector>
-#include <map>
+// #include <algorithm>
+// #include <string>
+// #include <vector>
+// #include <map>
 
 
 // Stores literal data types (int, str, double)
@@ -384,8 +384,7 @@ std::string Database::StripJunkOff(std::string Name) {
 
 
 // AddSimpleDataToType() adds simple data to the definition of a type
-void Database::AddSimpleDataToType(std::string TypeName, std::string Name,
-                                                                     SimpleDataInfo Info) {
+void Database::AddSimpleDataToType(std::string TypeName, std::string Name, SimpleDataInfo Info) {
         Scope[ScopeLevel].Types[TypeName].Members[Name] = Info;
 
         // Doubles are 8 bytes
@@ -434,8 +433,7 @@ int Database::GetDataType(std::string Name) {
 
     // Check from current scope, then scopes outside iteratively
     for (int Level = ScopeLevel; Level >= 0; --Level) {
-        if (Scope[Level].SimpleDataTypes.find(Name) !=
-                Scope[Level].SimpleDataTypes.end()) {
+        if (Scope[Level].SimpleDataTypes.find(Name) != Scope[Level].SimpleDataTypes.end()) {
             if (Scope[Level].SimpleDataTypes[Name].Type == String) {
                 return String;
             }
@@ -443,19 +441,15 @@ int Database::GetDataType(std::string Name) {
                 return Number;
             }
         }
-        if (Scope[Level].ArrayDataTypes.find(Name) !=
-                Scope[Level].ArrayDataTypes.end()) {
+        if (Scope[Level].ArrayDataTypes.find(Name) != Scope[Level].ArrayDataTypes.end()) {
             return Array;
         }
-        if (Scope[Level].Types.find(Name) != Scope[Level].Types.end()) {
-            return Type;
+        if (Scope[Level].Types.find(Name) != Scope[Level].Types.end()) {return Type;
         }
-        if (Scope[Level].UDTDataTypes.find(Name) !=
-                Scope[Level].UDTDataTypes.end()) {
+        if (Scope[Level].UDTDataTypes.find(Name) != Scope[Level].UDTDataTypes.end()) {
             return UDT;
         }
-        if (Scope[Level].SubFunctions.find(Name) !=
-                Scope[Level].SubFunctions.end()) {
+        if (Scope[Level].SubFunctions.find(Name) != Scope[Level].SubFunctions.end()) {
             return SubFunction;
         }
     }
@@ -467,8 +461,7 @@ int Database::GetDataType(std::string Name) {
 // ArrayDataInfo() returns information associated with an array
 ArrayDataInfo& Database::GetArrayData(std::string Name) {
     for (int Level = ScopeLevel; Level >= 0; --Level) {
-        if (Scope[Level].ArrayDataTypes.find(Name) !=
-                Scope[Level].ArrayDataTypes.end()) {
+        if (Scope[Level].ArrayDataTypes.find(Name) != Scope[Level].ArrayDataTypes.end()) {
             return Scope[Level].ArrayDataTypes[Name];
         }
     }
@@ -478,8 +471,7 @@ ArrayDataInfo& Database::GetArrayData(std::string Name) {
 // UDTDataInfo() returns information associated with a UDT (User-Defined Type)
 UDTDataInfo& Database::GetUDTData(std::string Name) {
     for (int Level = ScopeLevel; Level >= 0; --Level) {
-        if (Scope[Level].UDTDataTypes.find(Name) !=
-                Scope[Level].UDTDataTypes.end()) {
+        if (Scope[Level].UDTDataTypes.find(Name) != Scope[Level].UDTDataTypes.end()) {
             return Scope[Level].UDTDataTypes[Name];
         }
     }
@@ -489,8 +481,7 @@ UDTDataInfo& Database::GetUDTData(std::string Name) {
 // GestSimpleData() returns information associated with a simple variable
 SimpleDataInfo& Database::GetSimpleData(std::string Name) {
     for (int Level = ScopeLevel; Level >= 0; --Level) {
-        if (Scope[Level].SimpleDataTypes.find(Name) !=
-                Scope[Level].SimpleDataTypes.end()) {
+        if (Scope[Level].SimpleDataTypes.find(Name) != Scope[Level].SimpleDataTypes.end()) {
             return Scope[Level].SimpleDataTypes[Name];
         }
     }
@@ -502,7 +493,7 @@ void Database::AddSubFunction(std::string Type, std::string Name, bool External)
     // The current scope will have access to a scope nested inside of it
     --ScopeLevel;
     LastSubFunction = Name;
-    if (Mangle) {
+    if (Mangle == true) {
         Scope[ScopeLevel].SubFunctions[Name].Name = "_" + StripJunkOff(Name);
     }
     else {
@@ -610,9 +601,7 @@ void Database::ExitScope() {
 // GetScopeID() get the current scope's scope ID
 std::string Database::GetScopeID() {
     // std::string Result;
-    return Mangle
-           ? "Scope" + ToStr(UniqueScopeID) + "__"
-           : "";
+    return Mangle ? "Scope" + ToStr(UniqueScopeID) + "__" : "";
 }
 
 

@@ -1,6 +1,6 @@
 // Include libraries
 #include <iostream>
-#include <string> 
+#include <string>
 #include <fstream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +17,17 @@
   #include <windows.h>
 #endif
 
+// Configure program settings
+enum AppType{GUI, Console, DLL};
+int AppType = Console;
+bool Optimize = false;
+bool Compress = false;
+bool Mangle = true;
+
+double StartTime = 0.0;
+double TempTime = 0.0;
+int Pause = 0;
+
 
 // Include modules
 #include "Misc.hpp"
@@ -28,26 +39,16 @@
   Writing Write;
 #include "Assembly.hpp"
   Assembly Asm;
-#include "Compiler.hpp"
-  Compiler CompileIt;
 #include "Errors.hpp"
   Errors Error;
-
-
-// Configure program settings
-enum OS{Windows, Linux};
-enum AppType{GUI, Console, CGI};
-int OS = Windows;
-int AppType = Console;
+#include "Compiler.hpp"
+  Compiler CompileIt;
 
 // Core routines for compilation process
 void Start();
 void Compile(int argc, char* argv[]);
 void Stop();
 
-double StartTime 0.0;
-double TempTime = 0.0;
-int Pause = 0
 
 
 
@@ -80,7 +81,7 @@ void Compile(int argc, char* argv[]) {
     // If arg count is invalid, print the usage and exit
     if (argc != 2) {
         // Print error message and prompt user for filename
-        printf("Usage: KoolB <filename>\nEnter Filename: ");
+        printf("Usage: <compiled-cpp-executable> <filename>\nEnter Filename: ");
 
         // Windows API defines MAX_PATH=260
         char* InFile = new char[MAX_PATH];

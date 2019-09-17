@@ -104,18 +104,25 @@ public:
 private:
     // The source code to the program that has an error
     std::string Book;
+
     // The filename of the program that has an error
     std::string BookName;
+
     // Our current position in the file
     long BookMark;
+
     // The current line
     long CurrentLine;
+
     // The word or token in error
     std::string CurrentWord;
+
     // The type of toke in error
     int TypeOfWord;
+
     // The whole line of code that is in error
     std::string CodeLine;
+
     // The position where the word in error begings
     long ErrorLength;
 };

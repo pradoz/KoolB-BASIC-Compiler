@@ -1,13 +1,13 @@
 #ifndef ASSEMBLY_HPP
 #define ASSEMBLY_HPP
 
-#include <string>
+// #include <string>
 
 
 class Assembly {
 public:
     Assembly() { LabelNumber = 0; TempVariable = 0; }
-    
+
     void AddLibrary(std::string FunctionName);
     std::string GetLabel();
     void PostLabel(int Section, std::string Label);
@@ -130,7 +130,7 @@ private:
     // Track the number of temporary labels used
     int LabelNumber;
 
-    // Track the number of  variables stored in the .data section
+    // Track the number of variables stored in the .data section
     int TempVariable;
 };
 
@@ -396,8 +396,9 @@ void Assembly::PrepareErrorMessages() {
         Write.Line(Write.ToFunction, "MOV EDI,EAX");
         Write.Line(Write.ToFunction, "stdcall lstrcpy,EDI,NoFunctionFound");
         Write.Line(Write.ToFunction, "stdcall lstrcat,EDI,EBX");
-        } 
-        if (AppType == DLL) { - DONE w/: 3
+
+
+        if (AppType == DLL) {
             Write.Line(Write.ToFunction, "CALL GetProcessHeap");
             Write.Line(Write.ToFunction, "stdcall HeapAlloc,EAX,8,EDI");
         }
@@ -697,7 +698,7 @@ void Assembly::CreateTypeDouble(std::string TypeName, std::string Name, std::str
 }
 
 
-// CreateTypeString()  creates space for an unintialized string
+// CreateTypeString() creates space for an unintialized string
 void Assembly::CreateTypeString(std::string TypeName, std::string Name, std::string AsmName) {
     // Add the string information to the database
     AsmName = Data.GetScopeID() + AsmName;
@@ -708,6 +709,24 @@ void Assembly::CreateTypeString(std::string TypeName, std::string Name, std::str
 
     // Declare unintialized storage space for the integer
     Write.Line(Write.ToData, "." + AsmName + " resd 1");
+    return ;
+}
+
+
+// CreateUDT() creates space for an instance of a User-Defined Type
+void Assembly::CreateUDT(std::string UDT, std::string Name, std::string AsmName) {
+    // Store the UDT and its member variable information in the database
+    if (Mangle) {
+        AsmName = Data.GetScopeID() + Data.StripJunkOff(Name) + "_UDT";
+    }
+    else {
+        AsmName = Data.GetScopeID() + Data.StripJunkOff(Name);
+    }
+    Data.AddUDTData(UDT, Name, AsmName);
+
+    // Initiliaze the STRUC in the .data section
+    Write.Line(Write.ToData, AsmName +    " ISTRUC " + Data.Asm(UDT));
+    Write.Line(Write.ToData, "IEND");
     return ;
 }
 
@@ -3098,53 +3117,6 @@ void Assembly::OptimizeSubFunctions() {
     Write.Line(Write.ToLibrary, Data.GetUsedSubFunctions());
     return ;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// TODO:
-// IMPLEMENT 82 functions!! (deleted after implementation)
-void AllocateParameterPool(int Size);
-void AddToParameterPool(int Type, int Where);
-void PushParameterPool(int Type, int Where);
-void FreeParameterPool();
-void Callback(std::string Name);
-
-void AdjustStack(int Size);
-void OptimizeSubFunctions();
-// DONE w/: 75
-
 
 
 #endif // ASSEMBLY_HPP
