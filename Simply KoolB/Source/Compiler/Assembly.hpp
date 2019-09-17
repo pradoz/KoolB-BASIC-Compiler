@@ -945,7 +945,7 @@ void Assembly::LoadDefaults(int Type) {
         Write.Line(Write.ToMain,  "MOV byte[EAX],0");
         Write.Line(Write.ToMain,  "PUSH EAX");
     }
-    if (Type == Data.Double || Type == Data.Integer) {
+    if (Type == Data.Double or Type == Data.Integer) {
         // Load zero as the default number
         Write.Line(Write.ToMain,  "FINIT");
         Write.Line(Write.ToMain,  "FLDZ");
@@ -2691,6 +2691,417 @@ void Assembly::StopWhile(std::string StartWhileLabel, std::string EndWhileLabel)
 }
 
 
+// CreateSubFunction() creates the beginning of a sub or function
+void Assembly::CreateSubFunction(std::string Name, bool External) {
+    // Cannot define an external function, we can only import them
+    if (!External) {
+        Write.Line(Write.ToFunction, "");
+        // If the optimization flag is on, then add an ifdef statement to
+        // include or exclude from assembling.
+        if (Optimize) {
+            Write.Line(Write.ToFunction, "%ifdef " + Data.StripJunkOff(Name)+"_Used");
+        }
+        Write.Line(Write.ToFunction, "");
+
+        // This is a global function
+        Write.Line(Write.ToFunction, "global " + Data.Asm(Name));
+
+        // The function begins at the label
+        Write.Line(Write.ToFunction, Data.Asm(Name) + ":");
+
+        // Reserve registers and the stack until the function is created
+        Write.Line(Write.ToFunction, "PUSH EBP");
+        Write.Line(Write.ToFunction, "MOV EBP,ESP");
+        Write.Line(Write.ToFunction, "PUSH EBX");
+        Write.Line(Write.ToFunction, "PUSH EDI");
+        Write.Line(Write.ToFunction, "PUSH ESI");
+    }
+    return ;
+}
+
+
+// EndCreateSubFunction() finishes creating a sub or function
+void Assembly::EndCreateSubFunction(std::string Name, bool External) {
+    // Case where the function is user-defined
+    if (!External) {
+        // Restore the registers and the stack
+        Write.Line(Write.ToFunction, "POP ESI");
+        Write.Line(Write.ToFunction, "POP EDI");
+        Write.Line(Write.ToFunction, "POP EBX");
+        Write.Line(Write.ToFunction, "MOV ESP,EBP");
+        Write.Line(Write.ToFunction, "POP EBP");
+
+        // RET <Size of Parameters> clears the stack after returning
+        #ifdef Windows
+            Write.Line(Write.ToFunction, "RET " +
+                       ToStr(Data.GetSubFunctionInfo(Name).SizeOfParameters));
+        #endif
+        // Linux: RET will do
+        // #ifdef Linux
+        //     Write.Line(Write.ToFunction, "RET");
+        // #endif
+        // If we are optimizing, let's go ahead and end the block of the function
+        if (Optimize) {
+            Write.Line(Write.ToFunction, "");
+            Write.Line(Write.ToFunction, "%endif");
+        }
+    }
+
+    // Case where the function is external (imported from a library)
+    if (External) {
+        // If optimize is enabled, then inline an ifdef assembly directive
+        if (Optimize) {
+            Write.Line(Write.ToData, "%ifdef " + Data.StripJunkOff(Name) + "_Used");
+        }
+
+        // Store the address to the function
+        Write.Line(Write.ToData, Data.Asm(Name) + " dd 0");
+
+        // Store the handle of the library that the function 
+        Write.Line(Write.ToData, Data.Asm(Name) + "_LibHandle dd 0");
+
+        // Store the alias of the external function
+        Write.Line(Write.ToData, Data.Asm(Name) + "_Alias db \"" + 
+                                         Data.GetSubFunctionInfo(Name).ExternalInfo.Alias + "\",0");
+        // Store the name of the library the function belongs to
+        Write.Line(Write.ToData, Data.Asm(Name) + "_Lib db \"" + 
+                                     Data.GetSubFunctionInfo(Name).ExternalInfo.Library + "\",0");
+
+        // Define which calling convention to use convention to use
+        if (Data.GetSubFunctionInfo(Name).ExternalInfo.CallingConv == "STD") {
+            Write.Line(Write.ToData, Data.Asm(Name) + "_Call db 0");
+        }
+        else {
+            Write.Line(Write.ToData, Data.Asm(Name) + "_Call db 1");        
+        }
+
+
+        // Import Windows API function to free the library from memory
+        #ifdef Windows
+            AddLibrary("FreeLibrary");
+            if (Optimize) {
+                Write.Line(Write.ToFinishUp, "%ifdef "+Data.StripJunkOff(Name)+"_Used");
+            }
+            // For a DLL, the FreeLibrary has already been called because of the 
+            // positioning - FreeLibrary must go in a certain place for DLLs
+            if (AppType == GUI or AppType == Console) {
+                Write.Line(Write.ToFinishUp, "stdcall FreeLibrary,dword[" + 
+                                                                         Data.Asm(Name) + "_LibHandle]");
+            }
+            if (Optimize) {
+                Write.Line(Write.ToFinishUp, "%endif");
+            }
+        #endif
+        // #ifdef Linux
+        //     AddLibrary("dlclose"); // Tells the system we don't need the library
+        //     Write.Line(Write.ToFinishUp, "ccall dlclose," + Data.Asm(Name) + 
+        //                                                              "_LibHandle");
+        // #endif
+
+        // If optimization is enabled, add an endif to the end of the function
+        if (Optimize) {
+            Write.Line(Write.ToData, "%endif");
+        }
+    }
+    return ;
+}
+
+
+// InvokeSubFunction() invokes a function call
+void Assembly::InvokeSubFunction(std::string Name) {
+    // If this is a user-defined function, then tell the compiler to call it
+    if (!Data.GetSubFunctionInfo(Name).External) {
+        Write.Line(Write.ToMain, "CALL " + Data.Asm(Name));
+    }
+    // If this is an external function, then we may need to import it before
+    // telling the compiler to call it
+    if (Data.GetSubFunctionInfo(Name).External) {
+        CallExternalSubFunction(Name);
+    }
+    return ;
+}
+
+
+// ReturnValue() returns the value from a function call
+void Assembly::ReturnValue(std::string Name, std::string Type) {
+    // If we are returning a double, then load it to the FPU
+    if (Type == "DOUBLE") {
+        Write.Line(Write.ToFunction, "FINIT");
+        Write.Line(Write.ToFunction, "FLD qword[EBP-8]");
+    }
+    // If we are returning a string or integer, move to EAX register
+    if (Type == "INTEGER" or Type == "STRING") {
+        Write.Line(Write.ToFunction, "MOV EAX,dword[EBP-4]");
+    }
+    return ;
+}
+
+
+// CleanUpReturnValue() avoids memory leaks after returning a double or string
+void Assembly::CleanUpReturnValue(std::string Name, std::string Type) {
+    // Initialize the FPU
+    if (Type == "DOUBLE") {
+        Write.Line(Write.ToMain, "FINIT");
+    }
+    // Free the string from memory
+    if (Type == "STRING") {
+        FreeMemory(Write.ToMain, "EAX");
+    }
+    return ;
+}
+
+
+// PushReturnValue() However, if we are going to use the return value, push it
+// onto the stack
+void Assembly::PushReturnValue(std::string Name, std::string Type) {
+    // If we have an integer, just load it, and drop through to the second
+    // if statement to actually push it onto the stack
+    if (Type == "INTEGER") {
+        Write.Line(Write.ToMain, "MOV dword[TempQWord1],EAX");
+        Write.Line(Write.ToMain, "FINIT");
+        Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
+    }
+    // Once we have the double in the FPU, store it and push both parts
+    if (Type == "DOUBLE" or Type == "INTEGER") {
+        Write.Line(Write.ToMain, "FST qword[TempQWord1]");
+        Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
+        Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    }
+    // If all we have is a std::string, go ahead and push it
+    if (Type == "STRING") {
+        Write.Line(Write.ToMain, "PUSH EAX");
+    }
+    return ;
+}
+
+
+// LoadExternalSubFunction() loads a function from an external library
+void Assembly::LoadExternalSubFunction(std::string Name) {
+    #ifdef Windows
+        // Import Windows API function to load to the library
+        AddLibrary("LoadLibraryA");
+        // Import Windows API function to get the address of the function
+        AddLibrary("GetProcAddress");
+
+        // Labels to verify the function was imported and declared
+        std::string GoodLibraryLabel = GetLabel();
+        std::string GoodSubFunctionLabel = GetLabel();
+
+        // Store the library handle so the compiler can locate the function
+        Write.Line(Write.ToMain, "stdcall LoadLibraryA," + Data.Asm(Name) + "_Lib");
+        Write.Line(Write.ToMain, "MOV dword[" + Data.Asm(Name) + "_LibHandle],EAX");
+
+        // Check to see if we succesfully obtained the library handle
+        Write.Line(Write.ToMain, "CMP EAX,0");
+        Write.Line(Write.ToMain, "JNE " + GoodLibraryLabel);
+        Write.Line(Write.ToMain, "PUSH " + Data.Asm(Name) + "_Lib");
+        Write.Line(Write.ToMain, "JMP NoLibrary");
+        PostLabel(Write.ToMain,   GoodLibraryLabel);
+
+        // Get the address of the function inside the library 
+        Write.Line(Write.ToMain, "stdcall GetProcAddress,dword[" + Data.Asm(Name) + 
+                                                         "_LibHandle]," + Data.Asm(Name) + "_Alias");
+        // Store the function
+        Write.Line(Write.ToMain, "MOV dword[" + Data.Asm(Name) + "],EAX");
+
+        // Check to see if we succesfully obtained the function address
+        Write.Line(Write.ToMain, "CMP EAX,0");
+        Write.Line(Write.ToMain, "JNE " + GoodSubFunctionLabel);
+        Write.Line(Write.ToMain, "PUSH " + Data.Asm(Name) + "_Alias");
+        Write.Line(Write.ToMain, "JMP NoFunction");
+        PostLabel(Write.ToMain,   GoodSubFunctionLabel);
+
+        // For a DLL, we need to free the library
+        if (AppType == DLL) {
+            Write.Line(Write.ToFinishUp, "stdcall FreeLibrary,dword[" + 
+                                                                     Data.Asm(Name) + "_LibHandle]");
+        }
+    #endif
+    // Linux uses different functions
+    // #ifdef Linux
+    //     AddLibrary("dlerror"); // Reports the error in loading a library
+    //     AddLibrary("dlopen"); // Gets the handle to a library
+    //     AddLibrary("dlsym"); // Gets the address of a function in the library
+    //     std::string GoodLibraryLabel = GetLabel();
+    //     std::string GoodSubFunctionLabel = GetLabel();
+    //     // Get the handle to the library
+    //     Write.Line(Write.ToMain, "ccall dlopen," + Data.Asm(Name) + "_Lib,1");
+    //     Write.Line(Write.ToMain, "MOV dword[" + Data.Asm(Name) + "_LibHandle],EAX");
+    //     // Make sure the handle is valid
+    //     Write.Line(Write.ToMain, "CMP EAX,0");
+    //     Write.Line(Write.ToMain, "JNE " + GoodLibraryLabel);
+    //     Write.Line(Write.ToMain, "JMP Exit");
+    //     PostLabel(Write.ToMain,    GoodLibraryLabel);
+    //     // Get the address of the function
+    //     Write.Line(Write.ToMain, "ccall dlysm,dword[" + Data.Asm(Name) + 
+    //                                                      "_LibHandle]," + Data.Asm(Name) + "_Alias");
+    //     Write.Line(Write.ToMain, "MOV dword[" + Data.Asm(Name) + "],EAX");
+    //     // Ad make sure that we have a valid address, too
+    //     Write.Line(Write.ToMain, "CMP EAX,0");
+    //     Write.Line(Write.ToMain, "JNE " + GoodSubFunctionLabel);
+    //     Write.Line(Write.ToMain, "JMP Exit");
+    //     PostLabel(Write.ToMain,    GoodSubFunctionLabel);
+    // #endif
+    return ;
+}
+
+
+// CallExternalSubFunction() calls an external function
+void Assembly::CallExternalSubFunction(std::string Name) {
+    // Label to call the function
+    std::string CallLabel = GetLabel();
+
+    // Check to see if we have a valid function at the address to call
+    Write.Line(Write.ToMain, "CMP dword[" + Data.Asm(Name) + "],0");
+    Write.Line(Write.ToMain, "JNE " + CallLabel);
+
+    // If not, then load we need to load the external function's library before
+    // calling it
+    LoadExternalSubFunction(Name);
+    PostLabel(Write.ToMain,   CallLabel);
+
+    // Call the function at its address
+    Write.Line(Write.ToMain, "CALL dword[" + Data.Asm(Name) + "]");
+    return ;
+}
+
+
+// AllocateParameterPool() stores a function's parameters temporarily before
+// pushing them to the stack
+void Assembly::AllocateParameterPool(int Size) {
+    // Push the current pool of memory recursively until we have all the
+    // parameters
+    PUSH("dword[ParameterPool]");
+
+    // Allocate memory for the next pool
+    AllocMemory(Write.ToMain, ToStr(Size));
+
+    // Create memory in the pool to store the parameter
+    Write.Line(Write.ToMain, "MOV dword[ParameterPool],EAX");
+    return ;
+}
+
+
+// AddToParameterPool() adds a variable to the pool of parameters
+void Assembly::AddToParameterPool(int Type, int Where) {
+    // Get the parameter pool
+    Write.Line(Write.ToMain, "MOV EAX,dword[ParameterPool]");
+
+    // For integers, strings, and types, just pop directly to the pool
+    if (Type == Data.Integer or Type == Data.String or Type == Data.Type) {
+        Write.Line(Write.ToMain, "POP dword[EAX+" + ToStr(Where) + "]");
+    }
+
+    // Doubles require a double pop
+    if (Type == Data.Double) {
+        Write.Line(Write.ToMain, "POP dword[EAX+" + ToStr(Where) + "]");
+        Write.Line(Write.ToMain, "POP dword[EAX+" + ToStr(Where) + "+4]");
+    }
+    return ;
+}
+
+
+// PushParameterPool() pushes a parameter from the pool to the stack
+void Assembly::PushParameterPool(int Type, int Where) {
+    Write.Line(Write.ToMain, "MOV EAX,dword[ParameterPool]");
+
+    // If we have an integer or std::string, just do a simple push
+    if (Type == Data.Integer    || Type == Data.String) {
+        Write.Line(Write.ToMain, "PUSH dword[EAX+" + ToStr(Where) + "]");
+    }
+
+    // Push both parts of a double
+    if (Type == Data.Double) {
+        Write.Line(Write.ToMain, "PUSH dword[EAX+" + ToStr(Where) + "+4]");
+        Write.Line(Write.ToMain, "PUSH dword[EAX+" + ToStr(Where) + "]");
+    }    
+
+    // Get the address of the type, and then push the actual type
+    if (Type == Data.Type) {
+        Write.Line(Write.ToMain, "MOV EAX,dword[EAX+" + ToStr(Where) + "]");
+        Write.Line(Write.ToMain, "PUSH dword[EAX]");
+    }
+    return ;
+}
+
+
+// FreeparameterPool() Free the pool of parameters
+void Assembly::FreeParameterPool() {
+    // Reserve the return value by pushing it to the stack
+    PUSH("EAX");
+
+    // Get the parameter pool from memory
+    Write.Line(Write.ToMain, "MOV EAX,dword[ParameterPool]");
+
+    // Free the parameter pool from memory
+    FreeMemory(Write.ToMain, "EAX");
+
+    // Pop the return value
+    POP("EAX");
+
+    // Get the previous parameter pool we pushed before creating this pool
+    Write.Line(Write.ToMain, "POP dword[ParameterPool]");
+}
+
+
+// Callback() gets the address of a function
+void Assembly::Callback(std::string Name) {
+    // Case where an external function is called
+    if (Data.GetSubFunctionInfo(Name).External) {
+        std::string PushLabel = GetLabel();
+
+        // Check to see if we have a valid address to push
+        Write.Line(Write.ToMain, "CMP dword[" + Data.Asm(Name) + "],0");
+        Write.Line(Write.ToMain, "JNE " + PushLabel);
+
+        // If not, load the external function before calling it
+        LoadExternalSubFunction(Name);
+        PostLabel(Write.ToMain,   PushLabel);
+
+        // Push the address of the function
+        PUSH("dword[" + Data.Asm(Name) + "]");
+    }
+    else { // Otherwise, simply push the data to the stack
+        PUSH(Data.Asm(Name));
+    }
+    // Pop the address
+    POP("dword[TempQWord1]");
+
+    // Initialize the FPU
+    Write.Line(Write.ToMain, "FINIT");
+
+    // Load the address of the function
+    Write.Line(Write.ToMain, "FILD dword[TempQWord1]");
+
+    // Store it as a double
+    Write.Line(Write.ToMain, "FST qword[TempQWord1]");
+
+    // Push the function to the stack
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1+4]");
+    Write.Line(Write.ToMain, "PUSH dword[TempQWord1]");
+    return ;
+}
+
+
+// AdjustStack() removes parameters from the stack after a function that uses
+// the C calling convention is called
+void Assembly::AdjustStack(int Size) {
+    Write.Line(Write.ToMain, "ADD ESP," + ToStr(Size));
+    return ;
+}
+
+
+// OptimizeSubFunctions() returns a formatted list of all the functions calls
+// in a program and writes them to the assembly language file
+// Note: Functions that are not called will not be written in assembly
+void Assembly::OptimizeSubFunctions() {
+    Write.Line(Write.ToLibrary, Data.GetUsedSubFunctions());
+    return ;
+}
+
+
+
+
 
 
 
@@ -2724,18 +3135,6 @@ void Assembly::StopWhile(std::string StartWhileLabel, std::string EndWhileLabel)
 
 // TODO:
 // IMPLEMENT 82 functions!! (deleted after implementation)
-// DONE w/: 70
-void CreateSubFunction(std::string Name, bool External);
-void EndCreateSubFunction(std::string Name, bool External);
-void InvokeSubFunction(std::string Name);
-
-void ReturnValue(std::string Name, std::string Type);
-void CleanUpReturnValue(std::string Name, std::string Type);
-void PushReturnValue(std::string Name, std::string Type);
-
-void LoadExternalSubFunction(std::string Name);
-void CallExternalSubFunction(std::string Name);
-
 void AllocateParameterPool(int Size);
 void AddToParameterPool(int Type, int Where);
 void PushParameterPool(int Type, int Where);
@@ -2744,6 +3143,7 @@ void Callback(std::string Name);
 
 void AdjustStack(int Size);
 void OptimizeSubFunctions();
+// DONE w/: 75
 
 
 
