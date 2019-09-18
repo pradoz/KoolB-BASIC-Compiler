@@ -24,12 +24,13 @@ bool Optimize = false;
 bool Compress = false;
 bool Mangle = true;
 
+// Track the compile time
 double StartTime = 0.0;
 double TempTime = 0.0;
 int Pause = 0;
 
 
-// Include modules
+// Include modules and create an object if available
 #include "Misc.hpp"
 #include "Read.hpp"
   Reading Read;
@@ -102,8 +103,7 @@ void Compile(int argc, char* argv[]) {
     
     // Generate assembly language
     printf("Currently compiling \"%s\":\r\n", FileName.c_str());
-    // CompileIt.Compile(Read, false);
-    Asm.BuildSkeleton();
+    CompileIt.Compile(Read, false);
     
     // Clean up assembly language
     Asm.FinishUp();

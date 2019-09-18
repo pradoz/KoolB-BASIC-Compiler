@@ -112,20 +112,26 @@ private:
 // Compile() takes a a reading object and starts the compilation process.
 // Using the $Include command, it can recursively compile multiple files 
 void Compiler::Compile(Reading SourceFile, bool IsIncFile) { 
+    std::cout << "XXXX Entered Compiler::Compile()" << std::endl;
     // Store the source code into Read
     Read = SourceFile;
     Read.GetNextWord();
 
+    std::cout << "XXXX Obtained SourceFile and GetNextWord() " << std::endl;
     // Skip new lines
     while (Read.WordType() == Read.EndOfLine) {
         Read.GetNextWord();
     }
 
+    std::cout << "XXXX Skipped over whitespace " << std::endl;
+
     // If its not an $Include file, start the program
     if (!IsIncFile) {
+        std::cout << "XXXX It is not an include file, call PrepareProgram() " << std::endl;
         PrepareProgram();
     }
 
+    std::cout << "XXXX Reading each line " << std::endl;
     // Reads each line and pass control off (main compilation body)
     while (Read.WordType() != Read.None) {
         // If we have an Identifier, then we have a Statement
@@ -161,6 +167,7 @@ void Compiler::Compile(Reading SourceFile, bool IsIncFile) {
     if (Data.CanExitDirective()) {
         Error.NoEndToIfDef(Read);
     }
+    std::cout << "XXXX Made it to the return statement in Compiler::Compile() " << std::endl;
     return ;
 }
 
