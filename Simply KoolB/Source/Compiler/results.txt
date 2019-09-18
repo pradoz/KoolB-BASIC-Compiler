@@ -1,4 +1,4 @@
-﻿
+
 Error!
-An object file was given to GoLink whose format was not supported (Strings.obj)
+Could not open an input file (basictest.obj)
 Output file not made

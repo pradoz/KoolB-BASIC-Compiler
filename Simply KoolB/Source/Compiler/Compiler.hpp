@@ -129,6 +129,7 @@ void Compiler::Compile(Reading SourceFile, bool IsIncFile) {
     if (!IsIncFile) {
         std::cout << "XXXX It is not an include file, call PrepareProgram() " << std::endl;
         PrepareProgram();
+        std::cout << "XXXX Finished call to PrepareProgram() " << std::endl;
     }
 
     std::cout << "XXXX Reading each line " << std::endl;
@@ -136,29 +137,39 @@ void Compiler::Compile(Reading SourceFile, bool IsIncFile) {
     while (Read.WordType() != Read.None) {
         // If we have an Identifier, then we have a Statement
         if (Read.WordType() == Read.Identifier) {
+            std::cout << "XXXX Found an Identifier" << std::endl;
                 // Check if the user tried to declare an invalid variable
                 if (!Statement()) {
+                    std::cout << "XXXX Found Not a Statement" << std::endl;
                     NotDIM();
                     Assignment();
                 }
+                std::cout << "XXXX End check for Not a Statement" << std::endl;
         }
         // If we have a symbol as the first word of the line, then we have
         // a directive.
         else if (Read.WordType() == Read.Symbol) {
+            std::cout << "XXXX Found a Symbol" << std::endl;
             if (Read.Word() == "$") {
+                std::cout << "XXXX The symbol is a $" << std::endl;
                 Read.GetNextWord();
                 Directives(Read.Word());
             }
+            std::cout << "XXXX Ended conditional for $" << std::endl;
         }
         else if (Read.WordType() == Read.EndOfLine) {
+            std::cout << "XXXX Entered Do nothing at EOL $" << std::endl;
             // Do nothing at end of line
         }
         else {
+            std::cout << "XXXX Bad Statement error" << std::endl;
             // Display error message regarding invalid user input
             Error.BadStatement(Read);
         }
+    
         // Check for a newline or the end of the file after each command
         if (Read.WordType() != Read.EndOfLine and Read.WordType() != Read.None) {
+            std::cout << "XXXX Not end of line or none" << std::endl;
             Error.EndOfLine(Read);
         }
         Read.GetNextWord();
@@ -3201,7 +3212,7 @@ void Compiler::PrepareProgram() {
     // Define either Windows or Linux so the user can tell what type of OS 
     // the source code is being compiled on
     #ifdef Windows
-    Data.AddDefine("WINDOWS");
+        Data.AddDefine("WINDOWS");
     #endif
     // #ifdef Linux
     // Data.AddDefine("LINUX");

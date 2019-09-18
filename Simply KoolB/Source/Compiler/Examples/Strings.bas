@@ -4,15 +4,9 @@ $AppType Console
 $Optimize On
 $Compress On
 
-$Include "Libraries/KoolB.inc"
 
 Input "Enter your name: "; A$
 
-If Instr(1, UCase$(A$), Ucase$("Hello")) <> 0 Then
-  Print "Hey, we have the same name!"
-Else
-  Print "Well, nice knowing you"
-End If
 
 Sleep 2
 

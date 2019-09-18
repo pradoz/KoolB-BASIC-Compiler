@@ -176,7 +176,8 @@ void Writing::BuildApp(std::string FileName) {
     // For Windows OS, use NASM and GoLink
     #ifdef Windows
         // Run NASM
-        Run("Asm\\nasm -f win32 -o \"" + FileName + ".obj\" \"" + FileName + ".asm\"");
+        Run("Asm\\NASM -f win32 \"" + FileName + ".asm\" -o \"" + FileName + ".obj\"");
+        // Run("Asm\\NASM -E results.txt -f win32 -o \"" + FileName + ".obj\" \"" + FileName + ".asm\"");
         printf(" - Assemble time -> %f seconds\r\n", 
                    (double)(clock() - TempTime) / (double)CLK_TCK);
 

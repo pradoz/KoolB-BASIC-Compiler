@@ -205,17 +205,18 @@ bool Reading::SkipWhiteSpace() {
 // exit, it stops and assigns Identifier to TypeOfWord.
 void Reading::GetIdentifier() { 
     do {
+        std::cout << "XXXX CALLED GetIdentifier() with Book[BookMark] = "
+                  << Book[BookMark] << std::endl;
         if (!Book[BookMark]) {
             break;
         }
 
         // Convert to uppercase if flag is set
-        if (!Uppercase) {
-            // Preserve case (this will usually be the case)
-            CurrentWord += Book[BookMark];
-        }
-        else {
+        if (Uppercase) {
             CurrentWord += toupper(Book[BookMark]);
+        }
+        else { // Preserve case (this will usually be the case)
+            CurrentWord += Book[BookMark];
         }
         ++BookMark;
     } while (isalpha(Book[BookMark]) or isdigit(Book[BookMark]) or Book[BookMark] == '_');
@@ -272,17 +273,19 @@ void Reading::GetNumber() {
 // A string (denoted "" is anything that comes between two double quotes)
 // We only want the contents of the string, which is what is between the quotes
 void Reading::GetString() {
+    std::cout << "XXXX CALLED GetString() with Book[BookMark] = " << Book[BookMark] << std::endl;
     ++BookMark;
     while (Book[BookMark] != '\"') {
         CurrentWord += Book[BookMark];
         ++BookMark;
-        if (BookMark > BookLength or Book[BookMark] == '\n') {
+        if (!Book[BookMark] or Book[BookMark] == '\n') {
             std::cout << "SyntaxError on line: " << CurrentLine << ", at "<< CurrentWord << std::endl;
-
             std::cout << "ERR: Closing quotation mark not found on string." << std::endl;
             exit(1);
         }
     }
+    std::cout << "XXXX ENDING GetString() with CurrentWord = " << CurrentWord << std::endl;
+    std::cout << "XXXX ENDING GetString() with Book[BookMark] = " << Book[BookMark] << std::endl;
     ++BookMark;
     TypeOfWord = String;
     return ;
@@ -296,7 +299,8 @@ void Reading::GetString() {
 void Reading::GetSymbol() {
     // Case 1: underscore, which means continue the word to the next line.
     if (Book[BookMark] == '_') {
-        ++BookMark;
+        // Increment the bookmark to the next index
+        Book[BookMark++];
         if (SkipWhiteSpace()) {
             std::cout << "Error on line: " << CurrentLine << std::endl;
             std::cout << "ERR: Newline not found after \"_\"" << std::endl;
@@ -308,7 +312,7 @@ void Reading::GetSymbol() {
 
     // Case 2: colon, which is an end of line marker.
     if (Book[BookMark] == ':') {
-        CurrentWord = '\n';
+        CurrentWord = ':';
         ++BookMark;
         TypeOfWord = EndOfLine;
         return ;
@@ -395,7 +399,7 @@ std::string Reading::GetWholeLine() {
     std::string Line = "";
     while (Book[BookMark]) {
         if (Book[BookMark] == '\n') {
-            BookMark++;
+            ++BookMark;
             break;
         }
         Line += Book[BookMark];
@@ -408,17 +412,17 @@ std::string Reading::GetWholeLine() {
 // AddConstData() adds a constant as defined by $Const
 void Reading::AddConstData(std::string Name, std::string Value, int Type) {
     Const[Name].Value = Value;
-    Const[Name].Type  = Type;
+    Const[Name].Type = Type;
     return ;
 }
 
 
 // IsConstData() checks to see if a word is defined as a constant
 bool Reading::IsConstData(std::string Name) {
-  if (Const.find(Name) != Const.end()){
-    return true;
-  }
-  return false;
+    if (Const.find(Name) != Const.end()) {
+        return true;
+    }
+    return false;
 }
 
 

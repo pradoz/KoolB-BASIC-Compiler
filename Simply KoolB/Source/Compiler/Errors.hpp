@@ -193,7 +193,7 @@ void Errors::PrintCode() {
         Position -= 1;
     }
 
-    // Get a reference to the position of the  last newline
+    // Get a reference to the position of the last newline
     StartPos = Book.rfind("\r", Position);
 
     // If there is no last newline, then we are on the first line of the file

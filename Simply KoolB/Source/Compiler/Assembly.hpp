@@ -2181,7 +2181,7 @@ void Assembly::ConsoleCls() {
         // TODO: test possible CLS BUG
         // i think it should be:
         // Write.Line(Write.ToMain, "stdcall system,ConsoleClear")
-        Write.Line(Write.ToMain, "ccall system,ConsoleClear");
+        Write.Line(Write.ToMain, "stdcall system,ConsoleClear");
     #endif
     // #ifdef Linux
     //     Write.Line(Write.ToMain, "ccall system,ConsoleClear");
