@@ -1,5 +1,16 @@
-DIM P AS String
-DIM Rate204 as Double
-DIM RateSymbol as Integer
-DIM Rate188 as DOUBLE
- 
+$AppType Console
+$Optimize On
+$Compress On
+
+PRINT "HELLO"
+
+SLEEP 2
+
+PRINT ""
+PRINT ""
+
+PRINT "SEEYA"
+
+SLEEP 2
+PRINT "zZZZZZZZZzZZZ"
+SLEEP 1

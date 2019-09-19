@@ -22,11 +22,15 @@ void Run(std::string Command) {
     double StartTime = clock() / CLK_TCK;
     system(Command.c_str());
 
-    File.open(".\\results.txt", std::ios::in);
+    std::cout << "XXXX TRYING TO OPEN FILE" << std::endl;
+
+    File.open("results.txt", std::ios::in);
     while (File.is_open() == false) {
-        File.open(".\\results.txt", std::ios::in);
+        std::cout << "XXXX Looping because it wouldnt open" << std::endl;
+        File.open("results.txt", std::ios::in);
         if ((clock() / CLK_TCK) - StartTime > 120) {
             std::cout << "Time out running: " + Command << std::endl;
+            std::cout << "XXXX Looping because it wouldnt open" << std::endl;
             exit(1);
         }
     }
@@ -47,6 +51,7 @@ void Run(std::string Command) {
         exit(1);
     }
     File.close();
+    return ;
 }
 
 

@@ -1,4 +1,4 @@
-;Library functions to import to the KoolB program
+;Library functions to import to the program
 extern ExitProcess
 extern MessageBoxA
 extern lstrcat
@@ -10,6 +10,10 @@ extern HeapFree
 extern GetModuleHandleA
 extern GetCommandLineA
 extern GetStdHandle
+extern lstrlenA
+extern lstrcpyA
+extern WriteFile
+extern Sleep
 extern HeapDestroy
 
 
@@ -46,17 +50,43 @@ CMP dword[HandleToOutput],-1
 JNE Label3
 JMP NoConsole
 Label3:
-stdcall HeapAlloc,dword[HandleToHeap],8,1
-CMP EAX,0
-JNE Label4
-JMP NoMemory
-Label4:
-MOV dword[Scope0__P_String],EAX
-MOV byte[EAX],0
 
 
 
 ;Main body of the program where the program runs
+MOV EBX,String_1
+stdcall lstrlenA,EBX
+INC EAX
+MOV EDI,EAX
+stdcall HeapAlloc,dword[HandleToHeap],8,EDI
+CMP EAX,0
+JNE Label4
+JMP NoMemory
+Label4:
+MOV EBX,EAX
+stdcall lstrcpyA,EBX,String_1
+PUSH EBX
+POP EBX
+stdcall lstrlenA,EBX
+INC EAX
+DEC EAX
+stdcall WriteFile,dword[HandleToOutput],EBX,EAX,ConsoleTemp,0
+stdcall HeapFree,dword[HandleToHeap],0,EBX
+stdcall WriteFile,dword[HandleToOutput],ConsoleNewLine,1,ConsoleTemp,0
+PUSH dword[Number_2+4]
+PUSH dword[Number_2]
+POP dword[TempQWord1]
+POP dword[TempQWord1+4]
+MOV dword[TempQWord2],1000
+FINIT
+FLD qword[TempQWord1]
+FILD dword[TempQWord2]
+FMUL ST0,ST1
+FRNDINT
+FIST dword[TempQWord1]
+PUSH dword[TempQWord1]
+POP EBX
+stdcall Sleep,EBX
 
 
 
@@ -107,7 +137,7 @@ JMP Exit
 
 
 
-;Data section of the KoolB programp
+;Data section of the program
 section .data
 NoMemMessage db "Could not allocate memory.",0
 NoLibFound db "Could not find library: ",0
@@ -126,8 +156,7 @@ ConsoleNewLine db 10,0
 ConsoleClear db 'CLS',0
 HandleToInput dd 0
 HandleToOutput dd 0
-Scope0__P_String dd 0
-Scope0__RATE204_Double dq 0.0
-Scope0__RATESYMBOL_Integer dd 0
-Scope0__RATE188_Double dq 0.0
+String_1 db "HELLO WE FREAKING COMPILED",0
+Number_2 dq 3.0
+ExitStatus dd 0
 

@@ -1,6 +1,7 @@
 ' 
 ' --- Win32API.inc --- 
 ' 
+' A small collection of Win32 API declarations for KoolB. 
 ' 
 ' Because some API functions require that pointers to 
 ' strings be handled as Integers, and because KoolB does 
@@ -10,6 +11,11 @@
 ' 
 ' * The single exception is the MsgBox function, which 
 ' takes string parameters for convenience. 
+' 
+' Constants in this file are commented because KoolB (v15) 
+' does not seem to recognize constants defined in include 
+' files and I did not want to risk a conflict. C&P to the 
+' program source as necessary. 
 
 $IfNDef Win32APIinc 
 $Define Win32APIinc 

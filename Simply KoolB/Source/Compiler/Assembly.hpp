@@ -204,6 +204,9 @@ void Assembly::BuildSkeleton() {
 // FinishUp() does the opposite of BuildSkeleton. It ensures KoolB app can
 // shut down and exit properly. It is essentially a clean up function.
 void Assembly::FinishUp() {
+    // Set the ExitStatus
+    Write.Line(Write.ToData, "ExitStatus dd 0");
+
   #ifdef Windows
     // If Windows OS is not generating a DLL, then we need to destroy the heap.
     AddLibrary("HeapDestroy");
@@ -333,8 +336,7 @@ void Assembly::PrepareErrorMessages() {
 
     Write.Line(Write.ToData, "NoMemMessage db \"Could not allocate memory.\",0");
     Write.Line(Write.ToData, "NoLibFound db \"Could not find library: \",0");
-    Write.Line(Write.ToData, "NoFunctionFound db \"Cound not find function: "
-                                                     "\",0");
+    Write.Line(Write.ToData, "NoFunctionFound db \"Cound not find function: \",0");
     Write.Line(Write.ToData, "Error db \"An error occured\",0");
 
     // Import Windows API error functions to the compiler library
@@ -499,12 +501,12 @@ void Assembly::CreateString(std::string Name, std::string AsmName) {
     // Store the string in the compiler database
     SimpleDataInfo Info;
     Info.AsmName = AsmName;
-    Info.Type        = Data.String;
+    Info.Type = Data.String;
     Data.AddSimpleData(Name, Info);
 
     // If we are not inside a function, add the string to the .data section
     if (!Data.IsInsideSubFunction()) {
-        Write.Line(Write.ToData,         AsmName + " dd 0");
+        Write.Line(Write.ToData,   AsmName + " dd 0");
     }
 
     // Allocate 1 byte of memory, and store an empty string in it
@@ -514,7 +516,7 @@ void Assembly::CreateString(std::string Name, std::string AsmName) {
     Write.Line(Write.ToFireUp,     "MOV byte[EAX],0");
 
     // If we are in an function, free memory before returning
-    if (Name != "RESULT" and Data.IsInsideSubFunction()) {
+    if (Name != "RESULT" and Data.IsInsideSubFunction() != true) {
         FreeMemory(Write.ToFinishUp, "dword[" + Data.Asm(Name) + "]");
     }
     return ;
@@ -984,7 +986,7 @@ void Assembly::AllocMemory(int Section, std::string Size) {
         AddLibrary("HeapAlloc");
 
         // If this is a GUI or Console program, call memory from the heap
-        if (AppType == GUI or AppType == Console) {
+        if (AppType == Console or AppType == GUI) {
             Write.Line(Section, "stdcall HeapAlloc,dword[HandleToHeap],8," + Size);
         }
 
@@ -2068,7 +2070,7 @@ void Assembly::InitConsole() {
         // Initialize data for the console to run
         if (AppType == Console) {
             // Add labels that we can jump to
-            std::string InputOKLabel= GetLabel();
+            std::string InputOKLabel = GetLabel();
             std::string OutputOKLabel = GetLabel();
 
             // Import Windows API function that retrieves a handle to the
@@ -2110,12 +2112,12 @@ void Assembly::InitConsole() {
 }
 
 
-// ConsoleSleep() Pauses the program for a set amount of seconds
+// ConsoleSleep() pauses the program for a set amount of seconds
 void Assembly::ConsoleSleep() {
     #ifdef Windows
         // Convert seconds to milliseconds
         FormatTime();
-        AddLibrary("Sleep");       // Pause execution for X milliseconds
+        AddLibrary("Sleep");
 
         // Get the milliseconds to sleep
         Write.Line(Write.ToMain, "POP EBX");

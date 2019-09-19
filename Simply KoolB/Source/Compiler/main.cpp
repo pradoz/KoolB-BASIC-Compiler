@@ -21,8 +21,8 @@
 enum AppType{GUI, Console, DLL};
 int AppType = Console;
 bool Optimize = false;
-bool Compress = false;
 bool Mangle = true;
+bool Compress = false;
 
 // Track the compile time
 double StartTime = 0.0;
