@@ -108,7 +108,7 @@ void Writing::Line(int Section, std::string Asm) {
         // Write to section: Main
         case ToMain:
             if (InSubFunction) {
-                SubFunctionFireUpApp += Line;
+                SubFunctionMainApp += Line;
                 break;
             }
             MainApp += Line;
@@ -117,7 +117,7 @@ void Writing::Line(int Section, std::string Asm) {
         // Write to section: FinishUp
         case ToFinishUp:
             if (InSubFunction) {
-                SubFunctionFireUpApp += Line;
+                SubFunctionFinishUpApp += Line;
                 break;
             }
             FinishUpApp += Line;

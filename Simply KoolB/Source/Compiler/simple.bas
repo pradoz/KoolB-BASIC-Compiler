@@ -1,9 +1,10 @@
 $AppType Console
-$Optimize On
-$Compress Off
 
+Dim EmptyLine As String
 
-PRINT "HELLO WE FREAKING COMPILED"
+'Print out empty lines and a welcome message
+Print EmptyLine
+Print EmptyLine
+Print EmptyLine
 
-
-SLEEP 3
+Print "HELLO WE FREAKING COMPILED"

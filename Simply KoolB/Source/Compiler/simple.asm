@@ -13,7 +13,6 @@ extern GetStdHandle
 extern lstrlenA
 extern lstrcpyA
 extern WriteFile
-extern Sleep
 extern HeapDestroy
 
 
@@ -30,7 +29,7 @@ PUSH ESI
 PUSH EDI
 stdcall HeapCreate,0,16384,0
 MOV dword[HandleToHeap],EAX
-CMP dword[HandleToHeap],0
+CMP dword[HandleToHeap],1
 JNE Label1
 JMP NoMemory
 Label1:
@@ -50,19 +49,80 @@ CMP dword[HandleToOutput],-1
 JNE Label3
 JMP NoConsole
 Label3:
+stdcall HeapAlloc,dword[HandleToHeap],8,1
+CMP EAX,0
+JNE Label4
+JMP NoMemory
+Label4:
+MOV dword[Scope0__EMPTYLINE_String],EAX
+MOV byte[EAX],0
 
 
 
 ;Main body of the program where the program runs
+stdcall lstrlenA,dword[Scope0__EMPTYLINE_String]
+INC EAX
+MOV EBX,EAX
+stdcall HeapAlloc,dword[HandleToHeap],8,EBX
+CMP EAX,0
+JNE Label5
+JMP NoMemory
+Label5:
+MOV EDI,EAX
+stdcall lstrcpyA,EDI,dword[Scope0__EMPTYLINE_String]
+PUSH EAX
+POP EBX
+stdcall lstrlenA,EBX
+INC EAX
+DEC EAX
+stdcall WriteFile,dword[HandleToOutput],EBX,EAX,ConsoleTemp,0
+stdcall HeapFree,dword[HandleToHeap],0,EBX
+stdcall WriteFile,dword[HandleToOutput],ConsoleNewLine,1,ConsoleTemp,0
+stdcall lstrlenA,dword[Scope0__EMPTYLINE_String]
+INC EAX
+MOV EBX,EAX
+stdcall HeapAlloc,dword[HandleToHeap],8,EBX
+CMP EAX,0
+JNE Label6
+JMP NoMemory
+Label6:
+MOV EDI,EAX
+stdcall lstrcpyA,EDI,dword[Scope0__EMPTYLINE_String]
+PUSH EAX
+POP EBX
+stdcall lstrlenA,EBX
+INC EAX
+DEC EAX
+stdcall WriteFile,dword[HandleToOutput],EBX,EAX,ConsoleTemp,0
+stdcall HeapFree,dword[HandleToHeap],0,EBX
+stdcall WriteFile,dword[HandleToOutput],ConsoleNewLine,1,ConsoleTemp,0
+stdcall lstrlenA,dword[Scope0__EMPTYLINE_String]
+INC EAX
+MOV EBX,EAX
+stdcall HeapAlloc,dword[HandleToHeap],8,EBX
+CMP EAX,0
+JNE Label7
+JMP NoMemory
+Label7:
+MOV EDI,EAX
+stdcall lstrcpyA,EDI,dword[Scope0__EMPTYLINE_String]
+PUSH EAX
+POP EBX
+stdcall lstrlenA,EBX
+INC EAX
+DEC EAX
+stdcall WriteFile,dword[HandleToOutput],EBX,EAX,ConsoleTemp,0
+stdcall HeapFree,dword[HandleToHeap],0,EBX
+stdcall WriteFile,dword[HandleToOutput],ConsoleNewLine,1,ConsoleTemp,0
 MOV EBX,String_1
 stdcall lstrlenA,EBX
 INC EAX
 MOV EDI,EAX
 stdcall HeapAlloc,dword[HandleToHeap],8,EDI
 CMP EAX,0
-JNE Label4
+JNE Label8
 JMP NoMemory
-Label4:
+Label8:
 MOV EBX,EAX
 stdcall lstrcpyA,EBX,String_1
 PUSH EBX
@@ -73,25 +133,12 @@ DEC EAX
 stdcall WriteFile,dword[HandleToOutput],EBX,EAX,ConsoleTemp,0
 stdcall HeapFree,dword[HandleToHeap],0,EBX
 stdcall WriteFile,dword[HandleToOutput],ConsoleNewLine,1,ConsoleTemp,0
-PUSH dword[Number_2+4]
-PUSH dword[Number_2]
-POP dword[TempQWord1]
-POP dword[TempQWord1+4]
-MOV dword[TempQWord2],1000
-FINIT
-FLD qword[TempQWord1]
-FILD dword[TempQWord2]
-FMUL ST0,ST1
-FRNDINT
-FIST dword[TempQWord1]
-PUSH dword[TempQWord1]
-POP EBX
-stdcall Sleep,EBX
 
 
 
 ;Prepare the program to exit, then terminate the program
 Exit:
+stdcall HeapFree,dword[HandleToHeap],0,dword[Scope0__EMPTYLINE_String]
 stdcall HeapDestroy,dword[HandleToHeap]
 POP EDI
 POP ESI
@@ -129,6 +176,8 @@ stdcall HeapAlloc,dword[HandleToHeap],8,EAX
 MOV EDI,EAX
 stdcall lstrcpy,EDI,NoFunctionFound
 stdcall lstrcat,EDI,EBX
+stdcall MessageBoxA,0,EDI,Error,0
+stdcall HeapAlloc,dword[HandleToHeap],8,EDI
 JMP Exit
 NoConsole:
 MOV dword[ExitStatus],1
@@ -156,7 +205,7 @@ ConsoleNewLine db 10,0
 ConsoleClear db 'CLS',0
 HandleToInput dd 0
 HandleToOutput dd 0
+Scope0__EMPTYLINE_String dd 0
 String_1 db "HELLO WE FREAKING COMPILED",0
-Number_2 dq 3.0
 ExitStatus dd 0
 

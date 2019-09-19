@@ -181,7 +181,7 @@ bool Reading::SkipWhiteSpace() {
         // If we find a comment, move to the end of the line
         if (Book[BookMark] == '\'') { 
             ++BookMark;
-            while (Book[BookMark] != '\n' and BookMark < BookLength) {
+            while (Book[BookMark] != '\n' and Book[BookMark]) {
                 ++BookMark;
             }
         }

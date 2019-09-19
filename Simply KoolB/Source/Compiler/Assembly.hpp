@@ -175,7 +175,7 @@ void Assembly::BuildSkeleton() {
     AddLibrary("ExitProcess");
 
     // Load default icon
-    Write.Line(Write.ToResource, "KoolB ICON \"./Asm/Default.ico\"");
+    Write.Line(Write.ToResource, "Compiler ICON \"./Asm/Default.ico\"");
 
     // Add .data and .text section
     Write.Line(Write.ToData,     "section .data");
@@ -261,7 +261,7 @@ void Assembly::InitMemory() {
             // Store the handle to the heap
             Write.Line(Write.ToData,   "HandleToHeap dd 0");
 
-            // Allocate 16KB to the heap and allow it to resize
+            // Allocate 16KB to the heap and allow it to be resized
             Write.Line(Write.ToFireUp, "stdcall HeapCreate,0,16384,0");
 
             // Store the return value (EAX) in HandleToHeap
@@ -345,7 +345,7 @@ void Assembly::PrepareErrorMessages() {
         AddLibrary("lstrcat");
         AddLibrary("lstrlen");
         AddLibrary("lstrcpy");
-        PostLabel(Write.ToFunction,  "NoMemory");
+        // PostLabel(Write.ToFunction,  "NoMemory");
         Write.Line(Write.ToFunction, "MOV dword[ExitStatus],1");
         Write.Line(Write.ToFunction, "stdcall MessageBoxA,0,NoMemMessage,Error,0");
         Write.Line(Write.ToFunction, "JMP Exit");
@@ -398,8 +398,11 @@ void Assembly::PrepareErrorMessages() {
         Write.Line(Write.ToFunction, "MOV EDI,EAX");
         Write.Line(Write.ToFunction, "stdcall lstrcpy,EDI,NoFunctionFound");
         Write.Line(Write.ToFunction, "stdcall lstrcat,EDI,EBX");
+        Write.Line(Write.ToFunction, "stdcall MessageBoxA,0,EDI,Error,0");
 
-
+        if (AppType == Console or AppType == GUI) {
+            Write.Line(Write.ToFunction, "stdcall HeapAlloc,dword[HandleToHeap],8,EDI");
+        }
         if (AppType == DLL) {
             Write.Line(Write.ToFunction, "CALL GetProcessHeap");
             Write.Line(Write.ToFunction, "stdcall HeapAlloc,EAX,8,EDI");
@@ -2194,7 +2197,7 @@ void Assembly::ConsoleCls() {
 
 // ConsolePrint() prints a number or string to the console
 void Assembly::ConsolePrint(int Type) {
-    // If we are printing a string, let's be about it
+    // If we are printing a string
     if (Type == Data.String) {
         // Note: Here, we use WriteFile because WriteConsole cannot be
         // redirected to a file

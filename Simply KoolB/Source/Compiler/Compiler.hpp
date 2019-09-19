@@ -2556,7 +2556,7 @@ void Compiler::PrepareParameters(std::string Name) {
     int ParamCount = Data.GetSubFunctionInfo(Name).ParamCount;
 
     // Find each parameter's location on the stack
-    for (int i = 1; i <= ParamCount; i++) {
+    for (int i = 1; i <= ParamCount; ++i) {
         // Get current parameter's name and type
         std::string Type = Data.GetSubFunctionInfo(Name).Parameters[i].Type;
         std::string ParamName = Data.GetSubFunctionInfo(Name).Parameters[i].Name;
